@@ -1,0 +1,20 @@
+---
+description: Always ask the user before changing GPIO / pin assignments
+alwaysApply: true
+---
+
+# Ask before changing pins
+
+**Never** edit pin assignments without explicit user approval in the current conversation.
+
+Includes:
+- [`include/pins.h`](include/pins.h) (`PIN_*`, `TFT_WIDTH` / `TFT_HEIGHT` only if tied to wiring)
+- Any other hardcoded GPIO / DAC / SPI / encoder / TFT pin numbers in source
+- “Fixes” that remap CS, DC, RST, MOSI, SCLK, MISO, DAC, or encoder pins
+
+## Required behavior
+
+1. If a pin change seems needed (bug, conflict, blank display, etc.), **stop and ask** which pins to use.
+2. Do not “restore plan defaults” or guess wiring.
+3. Only change pins after the user confirms the exact mapping.
+4. After an approved change, keep [`AGENTS.md`](AGENTS.md) hardware notes in sync if they list those pins.
