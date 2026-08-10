@@ -26,7 +26,49 @@ namespace {
     float roundToStep(float v, float step) {
         return std::round(v / step) * step;
     }
+
+    constexpr FocusField kTopFields[] = {
+            FocusField::GroupSignal,
+            FocusField::GroupPwm,
+    };
+
+    constexpr FocusField kSignalFields[] = {
+            FocusField::SigBack,    FocusField::SigEnabled, FocusField::FreqKHz,
+            FocusField::FreqHundredHz, FocusField::FreqTensHz, FocusField::FreqHz,
+            FocusField::PhaseTens,  FocusField::PhaseDeg,   FocusField::PhaseFine,
+            FocusField::Waveform,   FocusField::Amplitude,
+    };
+
+    constexpr FocusField kPwmFields[] = {
+            FocusField::PwmBack,  FocusField::PwmEnabled, FocusField::PwmFreq,
+            FocusField::PwmCh1X20, FocusField::PwmCh1X1,  FocusField::PwmCh2X20,
+            FocusField::PwmCh2X1,
+    };
+
+    int indexOfField(const FocusField *fields, int count, FocusField field) {
+        for (int i = 0; i < count; ++i) {
+            if (fields[i] == field) {
+                return i;
+            }
+        }
+        return 0;
+    }
 } // namespace
+
+const FocusField *menuFields(MenuLevel level, int &count) {
+    switch (level) {
+        case MenuLevel::Signal:
+            count = static_cast<int>(sizeof(kSignalFields) / sizeof(kSignalFields[0]));
+            return kSignalFields;
+        case MenuLevel::Pwm:
+            count = static_cast<int>(sizeof(kPwmFields) / sizeof(kPwmFields[0]));
+            return kPwmFields;
+        case MenuLevel::Top:
+        default:
+            count = static_cast<int>(sizeof(kTopFields) / sizeof(kTopFields[0]));
+            return kTopFields;
+    }
+}
 
 void ParamModel::begin() {
     state_ = ParamSnapshot{};
@@ -57,7 +99,31 @@ void ParamModel::recompute() {
 }
 
 void ParamModel::toggleEdit() {
-    state_.editing = !state_.editing;
+    switch (state_.focus) {
+        case FocusField::GroupSignal:
+            state_.menu = MenuLevel::Signal;
+            state_.focus = FocusField::SigEnabled;
+            state_.editing = false;
+            return;
+        case FocusField::GroupPwm:
+            state_.menu = MenuLevel::Pwm;
+            state_.focus = FocusField::PwmEnabled;
+            state_.editing = false;
+            return;
+        case FocusField::SigBack:
+            state_.menu = MenuLevel::Top;
+            state_.focus = FocusField::GroupSignal;
+            state_.editing = false;
+            return;
+        case FocusField::PwmBack:
+            state_.menu = MenuLevel::Top;
+            state_.focus = FocusField::GroupPwm;
+            state_.editing = false;
+            return;
+        default:
+            state_.editing = !state_.editing;
+            break;
+    }
 }
 
 void ParamModel::moveFocus(int steps) {
@@ -65,12 +131,18 @@ void ParamModel::moveFocus(int steps) {
         return;
     }
 
-    const int count = static_cast<int>(FocusField::Count);
-    int next = (static_cast<int>(state_.focus) + steps) % count;
+    int count = 0;
+    const FocusField *fields = menuFields(state_.menu, count);
+    if (count <= 0) {
+        return;
+    }
+
+    int idx = indexOfField(fields, count, state_.focus);
+    int next = (idx + steps) % count;
     if (next < 0) {
         next += count;
     }
-    state_.focus = static_cast<FocusField>(next);
+    state_.focus = fields[next];
 }
 
 void ParamModel::applyEncoderDelta(int steps) {
@@ -79,6 +151,17 @@ void ParamModel::applyEncoderDelta(int steps) {
     }
 
     switch (state_.focus) {
+        case FocusField::GroupSignal:
+        case FocusField::GroupPwm:
+        case FocusField::SigBack:
+        case FocusField::PwmBack:
+            break;
+        case FocusField::SigEnabled:
+            state_.signalEnabled = !state_.signalEnabled;
+            break;
+        case FocusField::PwmEnabled:
+            state_.pwmEnabled = !state_.pwmEnabled;
+            break;
         case FocusField::FreqKHz:
             state_.freqKHz = clampi(state_.freqKHz + steps, 0, 19);
             break;

@@ -174,6 +174,12 @@ void SignalGenerator::setAmplitudeVolts(float volts) {
 }
 
 void SignalGenerator::apply(const ParamSnapshot &params) {
+    if (!params.signalEnabled) {
+        pause();
+        writeDacs(128, 128);
+        return;
+    }
+
     setFrequency(params.freqHz);
     setPhaseDeg(params.phaseDegTotal);
     setWaveform(params.waveform);

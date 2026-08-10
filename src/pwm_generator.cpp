@@ -37,6 +37,14 @@ void PwmGenerator::setChannelPulseUs(uint8_t pin, uint32_t pulseUs, float pwmHz)
 }
 
 void PwmGenerator::apply(const ParamSnapshot &params) {
+    if (!params.pwmEnabled) {
+        ledcWrite(PIN_PWM_CH1, 0);
+        ledcWrite(PIN_PWM_CH2, 0);
+        lastCh1Us_ = UINT32_MAX;
+        lastCh2Us_ = UINT32_MAX;
+        return;
+    }
+
     float hz = params.pwmHz;
     if (hz < 20.0f) {
         hz = 20.0f;

@@ -29,7 +29,9 @@ namespace {
         signalGenerator.pause();
         signalGenerator.apply(params);
         display.render(params);
-        signalGenerator.resume();
+        if (params.signalEnabled) {
+            signalGenerator.resume();
+        }
     }
 } // namespace
 

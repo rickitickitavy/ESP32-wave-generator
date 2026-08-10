@@ -9,8 +9,17 @@ enum class Waveform : uint8_t {
     Count,
 };
 
+enum class MenuLevel : uint8_t {
+    Top = 0,
+    Signal,
+    Pwm,
+};
+
 enum class FocusField : uint8_t {
-    FreqKHz = 0,
+    GroupSignal = 0,
+    GroupPwm,
+    SigEnabled,
+    FreqKHz,
     FreqHundredHz,
     FreqTensHz,
     FreqHz,
@@ -19,11 +28,14 @@ enum class FocusField : uint8_t {
     PhaseFine,
     Waveform,
     Amplitude,
+    SigBack,
+    PwmEnabled,
     PwmFreq,
     PwmCh1X20,
     PwmCh1X1,
     PwmCh2X20,
     PwmCh2X1,
+    PwmBack,
     Count,
 };
 
@@ -49,9 +61,17 @@ struct ParamSnapshot {
     float pwmHz = 100.0f;
     int pwmCh1Us = 100;
     int pwmCh2Us = 100;
-    FocusField focus = FocusField::FreqHundredHz;
+
+    bool signalEnabled = false;
+    bool pwmEnabled = false;
+
+    MenuLevel menu = MenuLevel::Top;
+    FocusField focus = FocusField::GroupSignal;
     bool editing = false;
 };
+
+// Fields visible for a menu level (for focus wrap + display).
+const FocusField *menuFields(MenuLevel level, int &count);
 
 class ParamModel {
 public:
