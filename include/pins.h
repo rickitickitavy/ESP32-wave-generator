@@ -5,9 +5,13 @@
 constexpr int PIN_DAC_CH1 = 25;
 constexpr int PIN_DAC_CH2 = 26;
 
+// Dual PWM outputs (LEDC; runs simultaneously with DAC).
+constexpr int PIN_PWM_CH1 = 21;
+constexpr int PIN_PWM_CH2 = 22;
+
 // Rotary encoder (phaseA / phaseB / button)
-constexpr int PIN_ENCODER_A = 33;
-constexpr int PIN_ENCODER_B = 32;
+constexpr int PIN_ENCODER_A = 32;
+constexpr int PIN_ENCODER_B = 33;
 // GPIO34 is input-only and has no internal pull-up — use an external pull-up.
 constexpr int PIN_ENCODER_BTN = 34;
 

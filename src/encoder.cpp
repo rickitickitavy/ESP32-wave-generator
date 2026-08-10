@@ -6,7 +6,7 @@ namespace {
     };
 } // namespace
 
-void Encoder::begin(int pinA, int pinB, int pinBtn) {
+void Encoder::begin(int pinA, int pinB, int pinBtn, void (*quadIsr)()) {
     pinA_ = pinA;
     pinB_ = pinB;
     pinBtn_ = pinBtn;
@@ -21,6 +21,9 @@ void Encoder::begin(int pinA, int pinB, int pinBtn) {
     lastAb_ = static_cast<uint8_t>((a << 1) | b);
     steps_ = 0;
 
+    attachInterrupt(digitalPinToInterrupt(pinA_), quadIsr, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(pinB_), quadIsr, CHANGE);
+
     btnStable_ = digitalRead(pinBtn_);
     btnReading_ = btnStable_;
     btnLastChangeMs_ = millis();
@@ -28,19 +31,18 @@ void Encoder::begin(int pinA, int pinB, int pinBtn) {
     hold1FiredThisHold_ = false;
 }
 
-void Encoder::update() {
-    // Poll quadrature here — a  high-rate DAC timer ISR would starve encoder ISRs.
+void Encoder::onQuadratureIsr() {
     const uint8_t a = digitalRead(pinA_) ? 1 : 0;
     const uint8_t b = digitalRead(pinB_) ? 1 : 0;
     const uint8_t ab = static_cast<uint8_t>((a << 1) | b);
-    if (ab != lastAb_) {
-        const int8_t delta = kQuadTable[(lastAb_ << 2) | ab];
-        lastAb_ = ab;
-        if (delta != 0) {
-            steps_ += delta;
-        }
+    const int8_t delta = kQuadTable[(lastAb_ << 2) | ab];
+    lastAb_ = ab;
+    if (delta != 0) {
+        steps_ += delta;
     }
+}
 
+void Encoder::update() {
     const int reading = digitalRead(pinBtn_);
     if (reading != btnReading_) {
         btnReading_ = reading;
@@ -67,8 +69,11 @@ void Encoder::update() {
 }
 
 int Encoder::consumeSteps() {
-    const int detents = steps_ / kStepsPerDetent;
-    steps_ = steps_ % kStepsPerDetent;
+    noInterrupts();
+    const int raw = steps_;
+    const int detents = raw / kStepsPerDetent;
+    steps_ = raw % kStepsPerDetent;
+    interrupts();
     return detents;
 }
 

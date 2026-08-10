@@ -4,9 +4,9 @@
 
 class Encoder {
 public:
-    void begin(int pinA, int pinB, int pinBtn);
+    // quadIsr: free-function trampoline owned by main.cpp (calls onQuadratureIsr).
+    void begin(int pinA, int pinB, int pinBtn, void (*quadIsr)());
 
-    // Poll quadrature + debounce button (call every loop).
     void update();
 
     // Cumulative detents since last consume (positive = CW).
@@ -15,13 +15,16 @@ public:
     // Short click: press+release before 1 second.
     bool consumePress();
 
+    // Called from ISR trampoline owned by main.cpp.
+    void IRAM_ATTR onQuadratureIsr();
+
 private:
     int pinA_ = -1;
     int pinB_ = -1;
     int pinBtn_ = -1;
 
-    int steps_ = 0;
-    uint8_t lastAb_ = 0;
+    volatile int steps_ = 0;
+    volatile uint8_t lastAb_ = 0;
 
     int btnStable_ = HIGH;
     int btnReading_ = HIGH;
@@ -32,6 +35,5 @@ private:
 
     static constexpr unsigned long kDebounceMs = 40;
     static constexpr unsigned long kHoldPressMs = 1000;
-    // KY-040-style modules typically produce 2 gray-code steps per detent.
-    static constexpr int kStepsPerDetent = 2;
+    static constexpr int kStepsPerDetent = 4;
 };

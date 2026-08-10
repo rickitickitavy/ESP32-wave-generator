@@ -24,12 +24,14 @@ Enforced via [`.cursor/rules/`](.cursor/rules/):
 - Pins: [`include/pins.h`](include/pins.h)
 - Display: ST7789 240×320, `setRotation(2)` (180°), Adafruit GFX
 - Outputs: DAC ch1 GPIO25, DAC ch2 GPIO26 (`PIN_DAC_CH1` / `PIN_DAC_CH2`; same waveform / freq / amplitude; ch2 phase offset)
+- PWM: ch1 GPIO21, ch2 GPIO22 (`PIN_PWM_CH1` / `PIN_PWM_CH2`; shared freq; per-channel pulse width µs). Runs **simultaneously** with DAC.
 
 ## Hardware notes
 
 - **GPIO34** (encoder button) is input-only and has **no internal pull-up** — wire an external pull-up to 3.3 V.
 - TFT uses VSPI defaults: MOSI=23, SCLK=18, MISO=19, CS=5; DC=13, RST=12. No backlight pin.
-- Encoder: A=33, B=32, button=34 (polled in `loop`; button needs external pull-up on GPIO34).
+- Encoder: A=33, B=32, button=34 (quadrature via GPIO ISR trampoline in `main.cpp`; button needs external pull-up on GPIO34).
+- PWM: GPIO21 (CH1), GPIO22 (CH2); LEDC hardware PWM, simultaneous with DAC.
 
 ## Build / flash
 
@@ -43,7 +45,10 @@ pio device monitor     # 115200
 
 - **UI:** `setTextSize(1)` with GFXfonts; no bitmap upscaling at draw time; prefer partial TFT redraws.
 - **Callbacks:** register handlers from owners (e.g. `main.cpp`), not fake class singletons.
-- **Channels:** type, frequency, and amplitude are always equal on both DACs; only phase (ch2 vs ch1) differs.
+- **Channels:** type, frequency, and amplitude are always equal on both DACs; only phase (CH2 relative to CH1; positive => CH2 leads) differs.
+- **DAC + PWM simultaneous:** DAC and PWM outputs always run together; PWM is not a waveform mode.
+- **DAC ISR:** use `dac_ll_update_output_value` for both channels (not `dacWrite`) so inter-channel phase is not skewed by ~10 µs/write.
+- **Phase resolution:** LUT size 32768 → real CH2−CH1 step ≈ 0.011° (requirement ≤ 0.05°).
 
 ## Key sources
 
@@ -53,6 +58,7 @@ pio device monitor     # 115200
 | Encoder class | `src/encoder.cpp`, `include/encoder.h` |
 | ParamModel class | `src/param_model.cpp`, `include/param_model.h` |
 | SignalGenerator class | `src/signal_generator.cpp`, `include/signal_generator.h` |
+| PwmGenerator class | `src/pwm_generator.cpp`, `include/pwm_generator.h` |
 | Display class | `src/display.cpp`, `include/display.h` |
 | Pins | `include/pins.h` |
 
