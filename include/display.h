@@ -30,8 +30,8 @@ private:
     static constexpr int kLogicalW = 240;
     static constexpr int kLogicalH = 320;
     static constexpr int kFieldCount = static_cast<int>(FocusField::Count);
-    // Keep fixed row height; pack as many rows as fit in the TFT.
-    static constexpr int kRowH = 28;
+    // Target row height; pack max rows that still fit, then stretch bands to fill TFT.
+    static constexpr int kRowH = 26;
     static constexpr int kVisibleRows = kLogicalH / kRowH;
     static constexpr int kVisibleFieldRows = kVisibleRows - 1; // last band = pinned summary
     static constexpr int kSummaryScreenRow = kVisibleFieldRows;
