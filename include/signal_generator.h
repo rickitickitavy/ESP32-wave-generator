@@ -13,6 +13,7 @@ public:
     void resume();
 
     void setFrequency(float freqHz);
+    // Phase of CH2 relative to CH1 in degrees (positive => CH2 leads CH1).
     void setPhaseDeg(float phaseDeg);
     void setWaveform(Waveform waveform);
     void setAmplitudeVolts(float volts);
@@ -27,11 +28,15 @@ private:
     static uint32_t freqToPhaseInc(float freqHz);
     static uint8_t IRAM_ATTR scaleSample(uint8_t sample, uint16_t gainQ8);
 
-    static constexpr int kLutSize = 256;
-    // 25 kHz leaves CPU time for encoder polling and TFT; still enough for 8 kHz output.
-    static constexpr float kSampleRateHz = 25000.0f;
-    static constexpr uint64_t kTimerAlarmUs = 40; // 1 MHz timer → 25 kHz
+    // 32768 → phase step 360/32768 ≈ 0.011° (must be ≤ 0.05° real resolution).
+    static constexpr int kLutSize = 32768;
+    static constexpr int kLutIndexShift = 17; // 32 - log2(32768)
+    static constexpr float kSampleRateHz = 100000.0f;
+    static constexpr uint64_t kTimerAlarmUs = 10; // 1 MHz timer → 100 kHz
     static constexpr float kDacFullScaleV = 3.3f;
+
+    static_assert((1 << (32 - kLutIndexShift)) == kLutSize, "LUT size/shift mismatch");
+    static_assert(360.0f / static_cast<float>(kLutSize) <= 0.05f, "phase step must be <= 0.05 deg");
 
     uint8_t lutSine_[kLutSize]{};
     uint8_t lutTriangle_[kLutSize]{};

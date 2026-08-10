@@ -2,7 +2,35 @@
 
 #include <cmath>
 
+#include "driver/dac_oneshot.h"
+#include "hal/dac_ll.h"
+#include "hal/dac_types.h"
 #include "pins.h"
+
+namespace {
+    dac_oneshot_handle_t gDacCh1 = nullptr;
+    dac_oneshot_handle_t gDacCh2 = nullptr;
+
+    void initDacChannels() {
+        if (gDacCh1 == nullptr) {
+            dac_oneshot_config_t cfg = {.chan_id = DAC_CHAN_0};
+            ESP_ERROR_CHECK(dac_oneshot_new_channel(&cfg, &gDacCh1));
+        }
+        if (gDacCh2 == nullptr) {
+            dac_oneshot_config_t cfg = {.chan_id = DAC_CHAN_1};
+            ESP_ERROR_CHECK(dac_oneshot_new_channel(&cfg, &gDacCh2));
+        }
+        // Avoid ADC RTC sampling glitching DAC output.
+        dac_ll_rtc_sync_by_adc(false);
+    }
+
+    inline void IRAM_ATTR writeDacs(uint8_t ch1, uint8_t ch2) {
+        // Direct register poke — keeps CH1/CH2 nearly simultaneous.
+        // (dacWrite/dac_oneshot_output_voltage is ~7–11 µs each and skews phase.)
+        dac_ll_update_output_value(DAC_CHAN_0, ch1);
+        dac_ll_update_output_value(DAC_CHAN_1, ch2);
+    }
+} // namespace
 
 void SignalGenerator::buildLuts() {
     for (int i = 0; i < kLutSize; ++i) {
@@ -44,8 +72,8 @@ uint32_t SignalGenerator::freqToPhaseInc(float freqHz) {
     if (freqHz < 0.1f) {
         freqHz = 0.1f;
     }
-    if (freqHz > 8000.0f) {
-        freqHz = 8000.0f;
+    if (freqHz > 20999.0f) {
+        freqHz = 20999.0f;
     }
     const double inc =
             (static_cast<double>(freqHz) / static_cast<double>(kSampleRateHz)) * 4294967296.0;
@@ -61,12 +89,12 @@ void SignalGenerator::onTimer() {
 
     const uint8_t *lut = lut_;
     const uint16_t gain = ampGainQ8_;
+    // phaseOffset_: phase of CH2 relative to CH1 (positive => CH2 leads CH1).
     const uint32_t offset = phaseOffset_;
 
-    const uint8_t s1 = lut[phase >> 24];
-    const uint8_t s2 = lut[(phase + offset) >> 24];
-    dacWrite(PIN_DAC_CH1, scaleSample(s1, gain));
-    dacWrite(PIN_DAC_CH2, scaleSample(s2, gain));
+    const uint8_t s1 = scaleSample(lut[phase >> kLutIndexShift], gain);
+    const uint8_t s2 = scaleSample(lut[(phase + offset) >> kLutIndexShift], gain);
+    writeDacs(s1, s2);
 }
 
 void SignalGenerator::begin(void (*timerIsr)()) {
@@ -76,6 +104,8 @@ void SignalGenerator::begin(void (*timerIsr)()) {
     phaseInc_ = freqToPhaseInc(1.0f);
     phaseOffset_ = 0;
     ampGainQ8_ = 256;
+
+    initDacChannels();
 
     // Arduino-ESP32 3.x: timer frequency in Hz; alarm period → kSampleRateHz
     timer_ = timerBegin(1000000);
@@ -100,15 +130,17 @@ void SignalGenerator::setFrequency(float freqHz) {
 }
 
 void SignalGenerator::setPhaseDeg(float phaseDeg) {
+    // Phase of CH2 relative to CH1, degrees. Positive => CH2 leads CH1.
     if (phaseDeg < -360.0f) {
         phaseDeg = -360.0f;
     }
     if (phaseDeg > 360.0f) {
         phaseDeg = 360.0f;
     }
-    const double frac = static_cast<double>(phaseDeg) / 360.0;
-    const int64_t raw = static_cast<int64_t>(frac * 4294967296.0);
-    phaseOffset_ = static_cast<uint32_t>(raw);
+    // offset = φ/360 * 2^32 (wraps for negative φ)
+    const int64_t ticks = std::llround(static_cast<double>(phaseDeg) * (4294967296.0 / 360.0));
+    phaseOffset_ = static_cast<uint32_t>(ticks);
+    // Serial.println("phaseOffset_ = " + String(phaseOffset_));
 }
 
 void SignalGenerator::setWaveform(Waveform waveform) {
