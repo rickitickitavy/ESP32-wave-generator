@@ -22,11 +22,12 @@ const char *Display::waveformName(Waveform w) {
 }
 
 int Display::rowY(int screenIndex) {
-    return screenIndex * kRowH;
+    // Stretch bands across full TFT height (26/27 px for 12 rows).
+    return (screenIndex * kLogicalH) / kVisibleRows;
 }
 
-int Display::rowH(int /*screenIndex*/) {
-    return kRowH;
+int Display::rowH(int screenIndex) {
+    return rowY(screenIndex + 1) - rowY(screenIndex);
 }
 
 void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
