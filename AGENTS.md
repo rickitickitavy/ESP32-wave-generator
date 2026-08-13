@@ -6,6 +6,7 @@ ESP32-WROOM-32 dual-channel DAC signal generator (PlatformIO / Arduino). CLion-f
 
 1. Read and follow [`~/.cursor/skills/esp32/SKILL.md`](/home/dsporynkhin/.cursor/skills/esp32/SKILL.md).
 2. For SPI or callbacks, also read [`~/.cursor/skills/esp32/patterns.md`](/home/dsporynkhin/.cursor/skills/esp32/patterns.md).
+3. For TFT/screen menu, parameter list, or dialog UI, read and follow [`~/.cursor/skills/tft-ui/SKILL.md`](/home/dsporynkhin/.cursor/skills/tft-ui/SKILL.md).
 
 ## Always-on project rules
 
@@ -14,6 +15,7 @@ Enforced via [`.cursor/rules/`](.cursor/rules/):
 | Rule | Meaning |
 |------|---------|
 | `esp32.mdc` | Apply the esp32 skill before firmware edits |
+| `tft-ui.mdc` | Apply the tft-ui skill for menu/dialog UI |
 | `no-font-upscale.mdc` | No `setTextSize(n≠1)`; use sized GFXfonts; draw bitmaps 1:1 |
 | `no-self-instance-ref.mdc` | No ad-hoc `static Foo *instance` in class files; wire callbacks from `main.cpp` |
 | `ask-before-pins.mdc` | **Always ask** before changing any GPIO / pin assignments |

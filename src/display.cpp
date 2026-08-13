@@ -62,7 +62,7 @@ void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
             break;
         case FocusField::SigBack:
         case FocusField::PwmBack:
-            snprintf(buf, buflen, "Back");
+            snprintf(buf, buflen, "BACK");
             break;
         case FocusField::FreqKHz:
             snprintf(buf, buflen, "F kHz");
@@ -123,10 +123,9 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
             buf[0] = '\0';
             break;
         case FocusField::SigEnabled:
-            snprintf(buf, buflen, "%s", s.signalEnabled ? "ON" : "OFF");
-            break;
         case FocusField::PwmEnabled:
-            snprintf(buf, buflen, "%s", s.pwmEnabled ? "ON" : "OFF");
+            // Value drawn as checkbox, not ON/OFF text.
+            buf[0] = '\0';
             break;
         case FocusField::FreqKHz:
             snprintf(buf, buflen, "%d", s.freqKHz);
@@ -265,8 +264,33 @@ void Display::drawUpLevelIcon(int x, int y, uint16_t color) {
     tft_.drawBitmap(x, y, kUpLevelIcon, kBackIconW, kBackIconH, color);
 }
 
+void Display::drawThickLine(int x0, int y0, int x1, int y1, uint16_t color, int thickness) {
+    const int half = thickness / 2;
+    for (int i = 0; i < thickness; ++i) {
+        const int dy = i - half;
+        tft_.drawLine(x0, y0 + dy, x1, y1 + dy, color);
+    }
+}
+
+void Display::drawBirdCheck(int boxX, int boxY, uint16_t checkFg) {
+    // Relative to 14×14 box; strokes may extend slightly outside.
+    drawThickLine(boxX - 1, boxY + 6, boxX + 5, boxY + 12, checkFg, kCheckStrokePx);
+    drawThickLine(boxX + 5, boxY + 12, boxX + 15, boxY - 1, checkFg, kCheckStrokePx);
+}
+
+void Display::drawCheckbox(int rowY, int rowH, bool checked, bool focused, bool editing,
+                           uint16_t rowFg) {
+    const int boxX = tft_.width() - kCheckRightPad - kCheckSize;
+    const int boxY = rowY + (rowH - kCheckSize) / 2;
+    tft_.drawRect(boxX, boxY, kCheckSize, kCheckSize, rowFg);
+    if (checked) {
+        const uint16_t mark = (focused || editing) ? kCheckMarkOnFocus : kCheckMarkGreen;
+        drawBirdCheck(boxX, boxY, mark);
+    }
+}
+
 void Display::drawFieldRow(int screenIndex, const char *name, const char *value, bool focused,
-                           bool editing, bool isBack) {
+                           bool editing, bool isBack, bool isCheckbox, bool checked) {
     const int y = rowY(screenIndex);
     const int h = rowH(screenIndex);
     const int w = tft_.width();
@@ -313,11 +337,18 @@ void Display::drawFieldRow(int screenIndex, const char *name, const char *value,
     tft_.setCursor(textX, baseline);
     tft_.print(name);
 
-    tft_.getTextBounds(value, 0, 0, &x1, &y1, &tw, &th);
-    tft_.setCursor(w - kPadX - static_cast<int>(tw) - x1, baseline);
-    tft_.print(value);
+    if (isCheckbox) {
+        drawCheckbox(y, h, checked, focused, editing, fg);
+    } else if (value[0] != '\0') {
+        tft_.getTextBounds(value, 0, 0, &x1, &y1, &tw, &th);
+        tft_.setCursor(w - kPadX - static_cast<int>(tw) - x1, baseline);
+        tft_.print(value);
+    }
 
-    drawDottedSeparator(y + h - 1, w);
+    // tft-ui: 1px dark-dark gray dotted separator only when item height < 22.
+    if (h < kSepMaxItemH) {
+        drawDottedSeparator(y + h - 1, w);
+    }
 }
 
 void Display::drawSummaryRow(const char *text) {
@@ -397,7 +428,12 @@ void Display::render(const ParamSnapshot &state) {
             formatFieldName(field, nameBuf, sizeof(nameBuf));
             formatFieldValue(state, field, valueBuf, sizeof(valueBuf));
             const bool isBack = field == FocusField::SigBack || field == FocusField::PwmBack;
-            drawFieldRow(screen, nameBuf, valueBuf, focused, editing, isBack);
+            const bool isCheckbox =
+                    field == FocusField::SigEnabled || field == FocusField::PwmEnabled;
+            const bool checked = field == FocusField::SigEnabled ? state.signalEnabled
+                                                                 : state.pwmEnabled;
+            drawFieldRow(screen, nameBuf, valueBuf, focused, editing, isBack, isCheckbox,
+                         isCheckbox && checked);
         }
     }
 
