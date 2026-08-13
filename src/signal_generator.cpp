@@ -91,10 +91,49 @@ void SignalGenerator::onTimer() {
     const uint16_t gain = ampGainQ8_;
     // phaseOffset_: phase of CH2 relative to CH1 (positive => CH2 leads CH1).
     const uint32_t offset = phaseOffset_;
+    const bool analogPwm = analogPwm_;
+    const bool sineNeg90 = analogPwmSineNeg90_;
+    const uint32_t pulseEnd = analogPwmPulseEnd_;
+    const uint32_t scaleQ16 = analogPwmScaleQ16_;
 
-    const uint8_t s1 = scaleSample(lut[phase >> kLutIndexShift], gain);
-    const uint8_t s2 = scaleSample(lut[(phase + offset) >> kLutIndexShift], gain);
-    writeDacs(s1, s2);
+    uint32_t idx1 = phase >> kLutIndexShift;
+    uint32_t idx2 = (phase + offset) >> kLutIndexShift;
+    uint8_t raw1;
+    uint8_t raw2;
+    if (analogPwm) {
+        if (pulseEnd == 0 || idx1 >= pulseEnd) {
+            raw1 = 0;
+        } else {
+            uint32_t src1 = (idx1 * scaleQ16) >> 16;
+            if (src1 >= static_cast<uint32_t>(kLutSize)) {
+                src1 = static_cast<uint32_t>(kLutSize - 1);
+            }
+            // sin(A - 90°) ≡ LUT index shifted by -kLutQuarter (both channels).
+            if (sineNeg90) {
+                src1 = (src1 + static_cast<uint32_t>(kLutSize - kLutQuarter)) &
+                       static_cast<uint32_t>(kLutSize - 1);
+            }
+            raw1 = lut[src1];
+        }
+        if (pulseEnd == 0 || idx2 >= pulseEnd) {
+            raw2 = 0;
+        } else {
+            uint32_t src2 = (idx2 * scaleQ16) >> 16;
+            if (src2 >= static_cast<uint32_t>(kLutSize)) {
+                src2 = static_cast<uint32_t>(kLutSize - 1);
+            }
+            if (sineNeg90) {
+                src2 = (src2 + static_cast<uint32_t>(kLutSize - kLutQuarter)) &
+                       static_cast<uint32_t>(kLutSize - 1);
+            }
+            raw2 = lut[src2];
+        }
+    } else {
+        raw1 = lut[idx1];
+        raw2 = lut[idx2];
+    }
+
+    writeDacs(scaleSample(raw1, gain), scaleSample(raw2, gain));
 }
 
 void SignalGenerator::begin(void (*timerIsr)()) {
@@ -104,6 +143,10 @@ void SignalGenerator::begin(void (*timerIsr)()) {
     phaseInc_ = freqToPhaseInc(1.0f);
     phaseOffset_ = 0;
     ampGainQ8_ = 256;
+    analogPwm_ = false;
+    analogPwmSineNeg90_ = false;
+    analogPwmPulseEnd_ = 0;
+    analogPwmScaleQ16_ = 0;
 
     initDacChannels();
 
@@ -140,22 +183,65 @@ void SignalGenerator::setPhaseDeg(float phaseDeg) {
     // offset = φ/360 * 2^32 (wraps for negative φ)
     const int64_t ticks = std::llround(static_cast<double>(phaseDeg) * (4294967296.0 / 360.0));
     phaseOffset_ = static_cast<uint32_t>(ticks);
-    // Serial.println("phaseOffset_ = " + String(phaseOffset_));
+}
+
+void SignalGenerator::setPhaseUs(int phaseUs, float freqHz) {
+    // Phase of CH2 relative to CH1, microseconds. Positive => CH2 leads CH1.
+    if (phaseUs < -9999) {
+        phaseUs = -9999;
+    }
+    if (phaseUs > 9999) {
+        phaseUs = 9999;
+    }
+    if (freqHz < 0.1f) {
+        freqHz = 0.1f;
+    }
+    // fraction of period = Δt * f; offset = fraction * 2^32
+    const double fraction = static_cast<double>(phaseUs) * 1.0e-6 * static_cast<double>(freqHz);
+    const int64_t ticks = std::llround(fraction * 4294967296.0);
+    phaseOffset_ = static_cast<uint32_t>(ticks);
+}
+
+const uint8_t *SignalGenerator::baseLut(Waveform waveform) const {
+    switch (waveform) {
+        case Waveform::Rectangular:
+            return lutRect_;
+        case Waveform::Triangle:
+            return lutTriangle_;
+        case Waveform::Sine:
+        default:
+            return lutSine_;
+    }
 }
 
 void SignalGenerator::setWaveform(Waveform waveform) {
-    switch (waveform) {
-        case Waveform::Rectangular:
-            lut_ = lutRect_;
-            break;
-        case Waveform::Triangle:
-            lut_ = lutTriangle_;
-            break;
-        case Waveform::Sine:
-        default:
-            lut_ = lutSine_;
-            break;
+    lut_ = baseLut(waveform);
+}
+
+void SignalGenerator::setAnalogPwmDuty(float dutyPercent) {
+    if (dutyPercent < 0.0f) {
+        dutyPercent = 0.0f;
     }
+    if (dutyPercent > 100.0f) {
+        dutyPercent = 100.0f;
+    }
+
+    int n = static_cast<int>(std::lround(dutyPercent / 100.0f * static_cast<float>(kLutSize)));
+    if (n < 0) {
+        n = 0;
+    }
+    if (n > kLutSize) {
+        n = kLutSize;
+    }
+
+    analogPwmPulseEnd_ = static_cast<uint32_t>(n);
+    if (n <= 0) {
+        analogPwmScaleQ16_ = 0;
+    } else {
+        analogPwmScaleQ16_ =
+                static_cast<uint32_t>((static_cast<uint64_t>(kLutSize) << 16) / static_cast<uint32_t>(n));
+    }
+    analogPwm_ = true;
 }
 
 void SignalGenerator::setAmplitudeVolts(float volts) {
@@ -181,7 +267,17 @@ void SignalGenerator::apply(const ParamSnapshot &params) {
     }
 
     setFrequency(params.freqHz);
-    setPhaseDeg(params.phaseDegTotal);
-    setWaveform(params.waveform);
     setAmplitudeVolts(params.ampVolts);
+    setWaveform(params.waveform);
+    if (params.dacMode == DacMode::AnalogPwm) {
+        setPhaseUs(params.phaseShiftUs, params.freqHz);
+        setAnalogPwmDuty(params.dutyPercent);
+        analogPwmSineNeg90_ = (params.waveform == Waveform::Sine);
+    } else {
+        setPhaseDeg(params.phaseDegTotal);
+        analogPwm_ = false;
+        analogPwmSineNeg90_ = false;
+        analogPwmPulseEnd_ = 0;
+        analogPwmScaleQ16_ = 0;
+    }
 }

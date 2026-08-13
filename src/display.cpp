@@ -39,6 +39,16 @@ const char *Display::waveformName(Waveform w) {
     }
 }
 
+const char *Display::dacModeName(DacMode mode) {
+    switch (mode) {
+        case DacMode::AnalogPwm:
+            return "AnPWM";
+        case DacMode::Oscillator:
+        default:
+            return "Osc";
+    }
+}
+
 int Display::rowY(int screenIndex) {
     // Stretch bands across full TFT height (26/27 px for 12 rows).
     return (screenIndex * kLogicalH) / kVisibleRows;
@@ -60,9 +70,18 @@ void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
         case FocusField::PwmEnabled:
             snprintf(buf, buflen, "Enabled");
             break;
+        case FocusField::SigMode:
+            snprintf(buf, buflen, "Mode");
+            break;
         case FocusField::SigBack:
         case FocusField::PwmBack:
             snprintf(buf, buflen, "BACK");
+            break;
+        case FocusField::Waveform:
+            snprintf(buf, buflen, "Wave");
+            break;
+        case FocusField::Amplitude:
+            snprintf(buf, buflen, "Amp V");
             break;
         case FocusField::FreqKHz:
             snprintf(buf, buflen, "F kHz");
@@ -83,13 +102,37 @@ void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
             snprintf(buf, buflen, "Ph deg");
             break;
         case FocusField::PhaseFine:
-            snprintf(buf, buflen, "Ph .01");
+            snprintf(buf, buflen, "Ph .1");
             break;
-        case FocusField::Waveform:
-            snprintf(buf, buflen, "Wave");
+        case FocusField::PhaseUs1000:
+            snprintf(buf, buflen, "Ph 1ms");
             break;
-        case FocusField::Amplitude:
-            snprintf(buf, buflen, "Amp V");
+        case FocusField::PhaseUs100:
+            snprintf(buf, buflen, "Ph 100us");
+            break;
+        case FocusField::PhaseUs10:
+            snprintf(buf, buflen, "Ph 10us");
+            break;
+        case FocusField::PhaseUs1:
+            snprintf(buf, buflen, "Ph 1us");
+            break;
+        case FocusField::PulseUs100:
+            snprintf(buf, buflen, "Pw 100us");
+            break;
+        case FocusField::PulseUs10:
+            snprintf(buf, buflen, "Pw 10us");
+            break;
+        case FocusField::PulseUs1:
+            snprintf(buf, buflen, "Pw 1us");
+            break;
+        case FocusField::Duty10:
+            snprintf(buf, buflen, "Duty 10");
+            break;
+        case FocusField::Duty1:
+            snprintf(buf, buflen, "Duty 1");
+            break;
+        case FocusField::DutyTenths:
+            snprintf(buf, buflen, "Duty .1");
             break;
         case FocusField::PwmFreq:
             snprintf(buf, buflen, "PWM x10Hz");
@@ -127,6 +170,15 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
             // Value drawn as checkbox, not ON/OFF text.
             buf[0] = '\0';
             break;
+        case FocusField::SigMode:
+            snprintf(buf, buflen, "%s", dacModeName(s.dacMode));
+            break;
+        case FocusField::Waveform:
+            snprintf(buf, buflen, "%s", waveformName(s.waveform));
+            break;
+        case FocusField::Amplitude:
+            snprintf(buf, buflen, "%.1f", static_cast<double>(s.ampVolts));
+            break;
         case FocusField::FreqKHz:
             snprintf(buf, buflen, "%d", s.freqKHz);
             break;
@@ -146,13 +198,37 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
             snprintf(buf, buflen, "%d", s.phaseDeg);
             break;
         case FocusField::PhaseFine:
-            snprintf(buf, buflen, "%+.2f", static_cast<double>(s.phaseFine));
+            snprintf(buf, buflen, "%+.1f", static_cast<double>(s.phaseFine));
             break;
-        case FocusField::Waveform:
-            snprintf(buf, buflen, "%s", waveformName(s.waveform));
+        case FocusField::PhaseUs1000:
+            snprintf(buf, buflen, "%+d", s.phaseUs1000);
             break;
-        case FocusField::Amplitude:
-            snprintf(buf, buflen, "%.1f", static_cast<double>(s.ampVolts));
+        case FocusField::PhaseUs100:
+            snprintf(buf, buflen, "%+d", s.phaseUs100);
+            break;
+        case FocusField::PhaseUs10:
+            snprintf(buf, buflen, "%+d", s.phaseUs10);
+            break;
+        case FocusField::PhaseUs1:
+            snprintf(buf, buflen, "%+d", s.phaseUs1);
+            break;
+        case FocusField::PulseUs100:
+            snprintf(buf, buflen, "%d", s.pulseUs100);
+            break;
+        case FocusField::PulseUs10:
+            snprintf(buf, buflen, "%d", s.pulseUs10);
+            break;
+        case FocusField::PulseUs1:
+            snprintf(buf, buflen, "%d", s.pulseUs1);
+            break;
+        case FocusField::Duty10:
+            snprintf(buf, buflen, "%d", s.duty10);
+            break;
+        case FocusField::Duty1:
+            snprintf(buf, buflen, "%d", s.duty1);
+            break;
+        case FocusField::DutyTenths:
+            snprintf(buf, buflen, "%d", s.dutyTenths);
             break;
         case FocusField::PwmFreq:
             snprintf(buf, buflen, "%d", s.pwmFreqX10);
@@ -176,9 +252,17 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
 }
 
 void Display::formatSummary(const ParamSnapshot &s, char *buf, size_t buflen) {
-    snprintf(buf, buflen, "%s %.0fHz %+.0f° %s P%.0f %d/%d", s.signalEnabled ? "DAC" : "dac",
-             static_cast<double>(s.freqHz), static_cast<double>(s.phaseDegTotal),
-             s.pwmEnabled ? "PWM" : "pwm", static_cast<double>(s.pwmHz), s.pwmCh1Us, s.pwmCh2Us);
+    if (s.dacMode == DacMode::AnalogPwm) {
+        snprintf(buf, buflen, "%s %.0fHz %+dus %s P%.0f %d/%d",
+                 s.signalEnabled ? "DAC" : "dac", static_cast<double>(s.freqHz), s.phaseShiftUs,
+                 s.pwmEnabled ? "PWM" : "pwm", static_cast<double>(s.pwmHz), s.pwmCh1Us,
+                 s.pwmCh2Us);
+    } else {
+        snprintf(buf, buflen, "%s %.0fHz %+.0f° %s P%.0f %d/%d",
+                 s.signalEnabled ? "DAC" : "dac", static_cast<double>(s.freqHz),
+                 static_cast<double>(s.phaseDegTotal), s.pwmEnabled ? "PWM" : "pwm",
+                 static_cast<double>(s.pwmHz), s.pwmCh1Us, s.pwmCh2Us);
+    }
 }
 
 bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, FocusField field) {
@@ -192,6 +276,12 @@ bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, Focus
             return a.signalEnabled != b.signalEnabled;
         case FocusField::PwmEnabled:
             return a.pwmEnabled != b.pwmEnabled;
+        case FocusField::SigMode:
+            return a.dacMode != b.dacMode;
+        case FocusField::Waveform:
+            return a.waveform != b.waveform;
+        case FocusField::Amplitude:
+            return a.ampVolts != b.ampVolts;
         case FocusField::FreqKHz:
             return a.freqKHz != b.freqKHz;
         case FocusField::FreqHundredHz:
@@ -206,10 +296,26 @@ bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, Focus
             return a.phaseDeg != b.phaseDeg;
         case FocusField::PhaseFine:
             return a.phaseFine != b.phaseFine;
-        case FocusField::Waveform:
-            return a.waveform != b.waveform;
-        case FocusField::Amplitude:
-            return a.ampVolts != b.ampVolts;
+        case FocusField::PhaseUs1000:
+            return a.phaseUs1000 != b.phaseUs1000;
+        case FocusField::PhaseUs100:
+            return a.phaseUs100 != b.phaseUs100;
+        case FocusField::PhaseUs10:
+            return a.phaseUs10 != b.phaseUs10;
+        case FocusField::PhaseUs1:
+            return a.phaseUs1 != b.phaseUs1;
+        case FocusField::PulseUs100:
+            return a.pulseUs100 != b.pulseUs100;
+        case FocusField::PulseUs10:
+            return a.pulseUs10 != b.pulseUs10;
+        case FocusField::PulseUs1:
+            return a.pulseUs1 != b.pulseUs1;
+        case FocusField::Duty10:
+            return a.duty10 != b.duty10;
+        case FocusField::Duty1:
+            return a.duty1 != b.duty1;
+        case FocusField::DutyTenths:
+            return a.dutyTenths != b.dutyTenths;
         case FocusField::PwmFreq:
             return a.pwmFreqX10 != b.pwmFreqX10;
         case FocusField::PwmCh1X20:
@@ -396,9 +502,11 @@ void Display::render(const ParamSnapshot &state) {
     char summaryBuf[48];
 
     int fieldCount = 0;
-    const FocusField *fields = menuFields(state.menu, fieldCount);
+    const FocusField *fields = menuFields(state, fieldCount);
 
-    const bool menuChanged = !hasLast_ || last_.menu != state.menu;
+    const bool menuChanged =
+            !hasLast_ || last_.menu != state.menu ||
+            (state.menu == MenuLevel::Signal && last_.dacMode != state.dacMode);
     if (menuChanged) {
         scrollOffset_ = 0;
     }
@@ -439,7 +547,8 @@ void Display::render(const ParamSnapshot &state) {
 
     const bool summaryNeed =
             scrollChanged || !hasLast_ || last_.freqHz != state.freqHz ||
-            last_.phaseDegTotal != state.phaseDegTotal || last_.pwmHz != state.pwmHz ||
+            last_.phaseDegTotal != state.phaseDegTotal || last_.phaseShiftUs != state.phaseShiftUs ||
+            last_.dacMode != state.dacMode || last_.pwmHz != state.pwmHz ||
             last_.pwmCh1Us != state.pwmCh1Us || last_.pwmCh2Us != state.pwmCh2Us ||
             last_.signalEnabled != state.signalEnabled || last_.pwmEnabled != state.pwmEnabled;
     if (summaryNeed) {

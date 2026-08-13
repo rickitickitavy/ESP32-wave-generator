@@ -15,6 +15,7 @@ public:
 
 private:
     static const char *waveformName(Waveform w);
+    static const char *dacModeName(DacMode mode);
     static int rowY(int screenIndex);
     static int rowH(int screenIndex);
     static void formatFieldName(FocusField field, char *buf, size_t buflen);
