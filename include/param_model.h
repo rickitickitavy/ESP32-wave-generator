@@ -9,9 +9,20 @@ enum class Waveform : uint8_t {
     Count,
 };
 
+enum class DacMode : uint8_t {
+    Oscillator = 0,
+    AnalogPwm,
+    Count,
+};
+
 enum class MenuLevel : uint8_t {
     Top = 0,
     Signal,
+    SigFreq,
+    SigPhase,
+    SigShiftUs,
+    SigPulse,
+    SigDuty,
     Pwm,
 };
 
@@ -19,15 +30,36 @@ enum class FocusField : uint8_t {
     GroupSignal = 0,
     GroupPwm,
     SigEnabled,
+    SigMode,
+    Waveform,
+    Amplitude,
+    GroupFreq,
+    FreqBack,
     FreqKHz,
     FreqHundredHz,
     FreqTensHz,
     FreqHz,
+    GroupPhase,
+    PhaseBack,
     PhaseTens,
     PhaseDeg,
     PhaseFine,
-    Waveform,
-    Amplitude,
+    GroupShiftUs,
+    ShiftUsBack,
+    PhaseUs1000,
+    PhaseUs100,
+    PhaseUs10,
+    PhaseUs1,
+    GroupPulse,
+    PulseBack,
+    PulseUs100,
+    PulseUs10,
+    PulseUs1,
+    GroupDuty,
+    DutyBack,
+    Duty10,
+    Duty1,
+    DutyTenths,
     SigBack,
     PwmEnabled,
     PwmFreq,
@@ -47,8 +79,20 @@ struct ParamSnapshot {
     int phaseTens = 0;
     int phaseDeg = 0;
     float phaseFine = 0.0f;
+    int phaseUs1000 = 0;
+    int phaseUs100 = 0;
+    int phaseUs10 = 0;
+    int phaseUs1 = 0;
     Waveform waveform = Waveform::Sine;
+    DacMode dacMode = DacMode::Oscillator;
     float ampVolts = 3.3f;
+
+    int pulseUs100 = 0;
+    int pulseUs10 = 0;
+    int pulseUs1 = 0;
+    int duty10 = 5;
+    int duty1 = 0;
+    int dutyTenths = 0;
 
     int pwmFreqX10 = 10;
     int pwmCh1X20 = 5;
@@ -58,6 +102,9 @@ struct ParamSnapshot {
 
     float freqHz = 0.0f;
     float phaseDegTotal = 0.0f;
+    int phaseShiftUs = 0;
+    int pulseUs = 0;
+    float dutyPercent = 50.0f;
     float pwmHz = 100.0f;
     int pwmCh1Us = 100;
     int pwmCh2Us = 100;
@@ -70,8 +117,8 @@ struct ParamSnapshot {
     bool editing = false;
 };
 
-// Fields visible for a menu level (for focus wrap + display).
-const FocusField *menuFields(MenuLevel level, int &count);
+// Fields visible for a menu level (for focus wrap + display). Mode-aware for Signal.
+const FocusField *menuFields(const ParamSnapshot &state, int &count);
 
 class ParamModel {
 public:
@@ -84,7 +131,14 @@ public:
     const ParamSnapshot &snapshot() const;
 
 private:
+    // Duty: duty digits → pulse µs. Pulse: pulse µs → duty digits.
+    // FreqKeepDuty: keep dutyPercent, refresh pulse µs from new period (Analog PWM).
+    enum class PulseDutyAnchor : uint8_t { Duty = 0, Pulse, FreqKeepDuty };
+
     void recompute();
+    void ensureFocusVisibleInMenu();
+    void syncPulseFromDutyPercent(float periodUs, int maxPulseUs);
 
     ParamSnapshot state_{};
+    PulseDutyAnchor pulseDutyAnchor_ = PulseDutyAnchor::Duty;
 };

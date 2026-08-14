@@ -39,13 +39,39 @@ const char *Display::waveformName(Waveform w) {
     }
 }
 
-int Display::rowY(int screenIndex) {
-    // Stretch bands across full TFT height (26/27 px for 12 rows).
-    return (screenIndex * kLogicalH) / kVisibleRows;
+const char *Display::dacModeName(DacMode mode) {
+    switch (mode) {
+        case DacMode::AnalogPwm:
+            return "AnPWM";
+        case DacMode::Oscillator:
+        default:
+            return "Osc";
+    }
 }
 
-int Display::rowH(int screenIndex) {
-    return rowY(screenIndex + 1) - rowY(screenIndex);
+bool Display::showsPlot(MenuLevel menu) {
+    return menu == MenuLevel::Signal || menu == MenuLevel::SigFreq || menu == MenuLevel::SigPhase ||
+           menu == MenuLevel::SigShiftUs || menu == MenuLevel::SigPulse ||
+           menu == MenuLevel::SigDuty || menu == MenuLevel::Pwm;
+}
+
+int Display::menuHeight(MenuLevel menu) {
+    return showsPlot(menu) ? kMenuHWithPlot : kLogicalH;
+}
+
+int Display::visibleFieldRows(MenuLevel menu) {
+    return menuHeight(menu) / kRowH;
+}
+
+int Display::rowY(int screenIndex, int menuH, int visibleRows) {
+    if (visibleRows <= 0) {
+        return 0;
+    }
+    return (screenIndex * menuH) / visibleRows;
+}
+
+int Display::rowH(int screenIndex, int menuH, int visibleRows) {
+    return rowY(screenIndex + 1, menuH, visibleRows) - rowY(screenIndex, menuH, visibleRows);
 }
 
 void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
@@ -56,13 +82,42 @@ void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
         case FocusField::GroupPwm:
             snprintf(buf, buflen, "PWM");
             break;
+        case FocusField::GroupFreq:
+            snprintf(buf, buflen, "Frequency");
+            break;
+        case FocusField::GroupPhase:
+            snprintf(buf, buflen, "Phase");
+            break;
+        case FocusField::GroupShiftUs:
+            snprintf(buf, buflen, "Shift us");
+            break;
+        case FocusField::GroupPulse:
+            snprintf(buf, buflen, "Pulse us");
+            break;
+        case FocusField::GroupDuty:
+            snprintf(buf, buflen, "Duty %%");
+            break;
         case FocusField::SigEnabled:
         case FocusField::PwmEnabled:
             snprintf(buf, buflen, "Enabled");
             break;
+        case FocusField::SigMode:
+            snprintf(buf, buflen, "Mode");
+            break;
         case FocusField::SigBack:
+        case FocusField::FreqBack:
+        case FocusField::PhaseBack:
+        case FocusField::ShiftUsBack:
+        case FocusField::PulseBack:
+        case FocusField::DutyBack:
         case FocusField::PwmBack:
-            snprintf(buf, buflen, "Back");
+            snprintf(buf, buflen, "BACK");
+            break;
+        case FocusField::Waveform:
+            snprintf(buf, buflen, "Wave");
+            break;
+        case FocusField::Amplitude:
+            snprintf(buf, buflen, "Amp V");
             break;
         case FocusField::FreqKHz:
             snprintf(buf, buflen, "F kHz");
@@ -83,13 +138,37 @@ void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
             snprintf(buf, buflen, "Ph deg");
             break;
         case FocusField::PhaseFine:
-            snprintf(buf, buflen, "Ph .01");
+            snprintf(buf, buflen, "Ph .1");
             break;
-        case FocusField::Waveform:
-            snprintf(buf, buflen, "Wave");
+        case FocusField::PhaseUs1000:
+            snprintf(buf, buflen, "Ph 1ms");
             break;
-        case FocusField::Amplitude:
-            snprintf(buf, buflen, "Amp V");
+        case FocusField::PhaseUs100:
+            snprintf(buf, buflen, "Ph 100us");
+            break;
+        case FocusField::PhaseUs10:
+            snprintf(buf, buflen, "Ph 10us");
+            break;
+        case FocusField::PhaseUs1:
+            snprintf(buf, buflen, "Ph 1us");
+            break;
+        case FocusField::PulseUs100:
+            snprintf(buf, buflen, "Pw 100us");
+            break;
+        case FocusField::PulseUs10:
+            snprintf(buf, buflen, "Pw 10us");
+            break;
+        case FocusField::PulseUs1:
+            snprintf(buf, buflen, "Pw 1us");
+            break;
+        case FocusField::Duty10:
+            snprintf(buf, buflen, "Duty 10");
+            break;
+        case FocusField::Duty1:
+            snprintf(buf, buflen, "Duty 1");
+            break;
+        case FocusField::DutyTenths:
+            snprintf(buf, buflen, "Duty .1");
             break;
         case FocusField::PwmFreq:
             snprintf(buf, buflen, "PWM x10Hz");
@@ -118,15 +197,43 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
         case FocusField::GroupPwm:
             snprintf(buf, buflen, ">");
             break;
+        case FocusField::GroupFreq:
+            snprintf(buf, buflen, "%.1f", static_cast<double>(s.freqHz));
+            break;
+        case FocusField::GroupPhase:
+            snprintf(buf, buflen, "%+.1f", static_cast<double>(s.phaseDegTotal));
+            break;
+        case FocusField::GroupShiftUs:
+            snprintf(buf, buflen, "%+d", s.phaseShiftUs);
+            break;
+        case FocusField::GroupPulse:
+            snprintf(buf, buflen, "%d", s.pulseUs);
+            break;
+        case FocusField::GroupDuty:
+            snprintf(buf, buflen, "%.1f%%", static_cast<double>(s.dutyPercent));
+            break;
         case FocusField::SigBack:
+        case FocusField::FreqBack:
+        case FocusField::PhaseBack:
+        case FocusField::ShiftUsBack:
+        case FocusField::PulseBack:
+        case FocusField::DutyBack:
         case FocusField::PwmBack:
             buf[0] = '\0';
             break;
         case FocusField::SigEnabled:
-            snprintf(buf, buflen, "%s", s.signalEnabled ? "ON" : "OFF");
-            break;
         case FocusField::PwmEnabled:
-            snprintf(buf, buflen, "%s", s.pwmEnabled ? "ON" : "OFF");
+            // Value drawn as checkbox, not ON/OFF text.
+            buf[0] = '\0';
+            break;
+        case FocusField::SigMode:
+            snprintf(buf, buflen, "%s", dacModeName(s.dacMode));
+            break;
+        case FocusField::Waveform:
+            snprintf(buf, buflen, "%s", waveformName(s.waveform));
+            break;
+        case FocusField::Amplitude:
+            snprintf(buf, buflen, "%.1f", static_cast<double>(s.ampVolts));
             break;
         case FocusField::FreqKHz:
             snprintf(buf, buflen, "%d", s.freqKHz);
@@ -147,13 +254,37 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
             snprintf(buf, buflen, "%d", s.phaseDeg);
             break;
         case FocusField::PhaseFine:
-            snprintf(buf, buflen, "%+.2f", static_cast<double>(s.phaseFine));
+            snprintf(buf, buflen, "%+.1f", static_cast<double>(s.phaseFine));
             break;
-        case FocusField::Waveform:
-            snprintf(buf, buflen, "%s", waveformName(s.waveform));
+        case FocusField::PhaseUs1000:
+            snprintf(buf, buflen, "%+d", s.phaseUs1000);
             break;
-        case FocusField::Amplitude:
-            snprintf(buf, buflen, "%.1f", static_cast<double>(s.ampVolts));
+        case FocusField::PhaseUs100:
+            snprintf(buf, buflen, "%+d", s.phaseUs100);
+            break;
+        case FocusField::PhaseUs10:
+            snprintf(buf, buflen, "%+d", s.phaseUs10);
+            break;
+        case FocusField::PhaseUs1:
+            snprintf(buf, buflen, "%+d", s.phaseUs1);
+            break;
+        case FocusField::PulseUs100:
+            snprintf(buf, buflen, "%d", s.pulseUs100);
+            break;
+        case FocusField::PulseUs10:
+            snprintf(buf, buflen, "%d", s.pulseUs10);
+            break;
+        case FocusField::PulseUs1:
+            snprintf(buf, buflen, "%d", s.pulseUs1);
+            break;
+        case FocusField::Duty10:
+            snprintf(buf, buflen, "%d", s.duty10);
+            break;
+        case FocusField::Duty1:
+            snprintf(buf, buflen, "%d", s.duty1);
+            break;
+        case FocusField::DutyTenths:
+            snprintf(buf, buflen, "%d", s.dutyTenths);
             break;
         case FocusField::PwmFreq:
             snprintf(buf, buflen, "%d", s.pwmFreqX10);
@@ -176,23 +307,38 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
     }
 }
 
-void Display::formatSummary(const ParamSnapshot &s, char *buf, size_t buflen) {
-    snprintf(buf, buflen, "%s %.0fHz %+.0f° %s P%.0f %d/%d", s.signalEnabled ? "DAC" : "dac",
-             static_cast<double>(s.freqHz), static_cast<double>(s.phaseDegTotal),
-             s.pwmEnabled ? "PWM" : "pwm", static_cast<double>(s.pwmHz), s.pwmCh1Us, s.pwmCh2Us);
-}
-
 bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, FocusField field) {
     switch (field) {
         case FocusField::GroupSignal:
         case FocusField::GroupPwm:
         case FocusField::SigBack:
+        case FocusField::FreqBack:
+        case FocusField::PhaseBack:
+        case FocusField::ShiftUsBack:
+        case FocusField::PulseBack:
+        case FocusField::DutyBack:
         case FocusField::PwmBack:
             return false;
+        case FocusField::GroupFreq:
+            return a.freqHz != b.freqHz;
+        case FocusField::GroupPhase:
+            return a.phaseDegTotal != b.phaseDegTotal;
+        case FocusField::GroupShiftUs:
+            return a.phaseShiftUs != b.phaseShiftUs;
+        case FocusField::GroupPulse:
+            return a.pulseUs != b.pulseUs;
+        case FocusField::GroupDuty:
+            return a.dutyPercent != b.dutyPercent;
         case FocusField::SigEnabled:
             return a.signalEnabled != b.signalEnabled;
         case FocusField::PwmEnabled:
             return a.pwmEnabled != b.pwmEnabled;
+        case FocusField::SigMode:
+            return a.dacMode != b.dacMode;
+        case FocusField::Waveform:
+            return a.waveform != b.waveform;
+        case FocusField::Amplitude:
+            return a.ampVolts != b.ampVolts;
         case FocusField::FreqKHz:
             return a.freqKHz != b.freqKHz;
         case FocusField::FreqHundredHz:
@@ -207,10 +353,26 @@ bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, Focus
             return a.phaseDeg != b.phaseDeg;
         case FocusField::PhaseFine:
             return a.phaseFine != b.phaseFine;
-        case FocusField::Waveform:
-            return a.waveform != b.waveform;
-        case FocusField::Amplitude:
-            return a.ampVolts != b.ampVolts;
+        case FocusField::PhaseUs1000:
+            return a.phaseUs1000 != b.phaseUs1000;
+        case FocusField::PhaseUs100:
+            return a.phaseUs100 != b.phaseUs100;
+        case FocusField::PhaseUs10:
+            return a.phaseUs10 != b.phaseUs10;
+        case FocusField::PhaseUs1:
+            return a.phaseUs1 != b.phaseUs1;
+        case FocusField::PulseUs100:
+            return a.pulseUs100 != b.pulseUs100;
+        case FocusField::PulseUs10:
+            return a.pulseUs10 != b.pulseUs10;
+        case FocusField::PulseUs1:
+            return a.pulseUs1 != b.pulseUs1;
+        case FocusField::Duty10:
+            return a.duty10 != b.duty10;
+        case FocusField::Duty1:
+            return a.duty1 != b.duty1;
+        case FocusField::DutyTenths:
+            return a.dutyTenths != b.dutyTenths;
         case FocusField::PwmFreq:
             return a.pwmFreqX10 != b.pwmFreqX10;
         case FocusField::PwmCh1X20:
@@ -227,7 +389,49 @@ bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, Focus
     return false;
 }
 
-void Display::ensureFocusVisible(FocusField focus, int fieldCount, const FocusField *fields) {
+bool Display::plotParamsChanged(const ParamSnapshot &a, const ParamSnapshot &b) {
+    if (a.menu != b.menu) {
+        return true;
+    }
+    if (a.menu == MenuLevel::Signal || a.menu == MenuLevel::SigFreq ||
+        a.menu == MenuLevel::SigPhase || a.menu == MenuLevel::SigShiftUs ||
+        a.menu == MenuLevel::SigPulse || a.menu == MenuLevel::SigDuty) {
+        return a.waveform != b.waveform || a.dacMode != b.dacMode || a.ampVolts != b.ampVolts ||
+               a.freqHz != b.freqHz || a.phaseDegTotal != b.phaseDegTotal ||
+               a.phaseShiftUs != b.phaseShiftUs || a.dutyPercent != b.dutyPercent ||
+               a.pulseUs != b.pulseUs;
+    }
+    if (a.menu == MenuLevel::Pwm) {
+        return a.pwmHz != b.pwmHz || a.pwmCh1Us != b.pwmCh1Us || a.pwmCh2Us != b.pwmCh2Us;
+    }
+    return false;
+}
+
+void Display::fillPwmPeriodPreview(const ParamSnapshot &params, uint8_t *ch1, uint8_t *ch2,
+                                   int count) {
+    if (ch1 == nullptr || ch2 == nullptr || count <= 0) {
+        return;
+    }
+
+    float hz = params.pwmHz;
+    if (hz < 0.1f) {
+        hz = 0.1f;
+    }
+    const float periodUs = 1000000.0f / hz;
+    const float high1 = static_cast<float>(params.pwmCh1Us);
+    const float high2 = static_cast<float>(params.pwmCh2Us);
+
+    for (int i = 0; i < count; ++i) {
+        const float tUs =
+                (count == 1) ? 0.0f
+                             : (static_cast<float>(i) / static_cast<float>(count)) * periodUs;
+        ch1[i] = (tUs < high1) ? 255 : 0;
+        ch2[i] = (tUs < high2) ? 255 : 0;
+    }
+}
+
+void Display::ensureFocusVisible(FocusField focus, int fieldCount, const FocusField *fields,
+                                 int visibleRows) {
     int focusIndex = 0;
     for (int i = 0; i < fieldCount; ++i) {
         if (fields[i] == focus) {
@@ -238,11 +442,11 @@ void Display::ensureFocusVisible(FocusField focus, int fieldCount, const FocusFi
 
     if (focusIndex < scrollOffset_) {
         scrollOffset_ = focusIndex;
-    } else if (focusIndex >= scrollOffset_ + kVisibleFieldRows) {
-        scrollOffset_ = focusIndex - kVisibleFieldRows + 1;
+    } else if (focusIndex >= scrollOffset_ + visibleRows) {
+        scrollOffset_ = focusIndex - visibleRows + 1;
     }
 
-    const int maxOffset = fieldCount - kVisibleFieldRows;
+    const int maxOffset = fieldCount - visibleRows;
     if (scrollOffset_ < 0) {
         scrollOffset_ = 0;
     }
@@ -265,10 +469,36 @@ void Display::drawUpLevelIcon(int x, int y, uint16_t color) {
     tft_.drawBitmap(x, y, kUpLevelIcon, kBackIconW, kBackIconH, color);
 }
 
-void Display::drawFieldRow(int screenIndex, const char *name, const char *value, bool focused,
-                           bool editing, bool isBack) {
-    const int y = rowY(screenIndex);
-    const int h = rowH(screenIndex);
+void Display::drawThickLine(int x0, int y0, int x1, int y1, uint16_t color, int thickness) {
+    const int half = thickness / 2;
+    for (int i = 0; i < thickness; ++i) {
+        const int dy = i - half;
+        tft_.drawLine(x0, y0 + dy, x1, y1 + dy, color);
+    }
+}
+
+void Display::drawBirdCheck(int boxX, int boxY, uint16_t checkFg) {
+    // Relative to 14×14 box; strokes may extend slightly outside.
+    drawThickLine(boxX - 1, boxY + 6, boxX + 5, boxY + 12, checkFg, kCheckStrokePx);
+    drawThickLine(boxX + 5, boxY + 12, boxX + 15, boxY - 1, checkFg, kCheckStrokePx);
+}
+
+void Display::drawCheckbox(int rowY, int rowH, bool checked, bool focused, bool editing,
+                           uint16_t rowFg) {
+    const int boxX = tft_.width() - kCheckRightPad - kCheckSize;
+    const int boxY = rowY + (rowH - kCheckSize) / 2;
+    tft_.drawRect(boxX, boxY, kCheckSize, kCheckSize, rowFg);
+    if (checked) {
+        const uint16_t mark = (focused || editing) ? kCheckMarkOnFocus : kCheckMarkGreen;
+        drawBirdCheck(boxX, boxY, mark);
+    }
+}
+
+void Display::drawFieldRow(int screenIndex, int menuH, int visibleRows, const char *name,
+                           const char *value, bool focused, bool editing, bool isBack,
+                           bool isCheckbox, bool checked) {
+    const int y = rowY(screenIndex, menuH, visibleRows);
+    const int h = rowH(screenIndex, menuH, visibleRows);
     const int w = tft_.width();
 
     uint16_t bg = ST77XX_BLACK;
@@ -313,40 +543,62 @@ void Display::drawFieldRow(int screenIndex, const char *name, const char *value,
     tft_.setCursor(textX, baseline);
     tft_.print(name);
 
-    tft_.getTextBounds(value, 0, 0, &x1, &y1, &tw, &th);
-    tft_.setCursor(w - kPadX - static_cast<int>(tw) - x1, baseline);
-    tft_.print(value);
+    if (isCheckbox) {
+        drawCheckbox(y, h, checked, focused, editing, fg);
+    } else if (value[0] != '\0') {
+        tft_.getTextBounds(value, 0, 0, &x1, &y1, &tw, &th);
+        tft_.setCursor(w - kPadX - static_cast<int>(tw) - x1, baseline);
+        tft_.print(value);
+    }
 
-    drawDottedSeparator(y + h - 1, w);
+    // tft-ui: 1px dark-dark gray dotted separator only when item height < 22.
+    if (h < kSepMaxItemH) {
+        drawDottedSeparator(y + h - 1, w);
+    }
 }
 
-void Display::drawSummaryRow(const char *text) {
-    const int y = rowY(kSummaryScreenRow);
-    const int h = rowH(kSummaryScreenRow);
+void Display::drawWavePlot(const uint8_t *ch1, const uint8_t *ch2, int count) {
+    const int plotY = kMenuHWithPlot;
     const int w = tft_.width();
-    const uint16_t bg = ST77XX_BLACK;
-    const uint16_t fg = ST77XX_YELLOW;
+    const int h = kPlotH;
 
-    tft_.fillRect(0, y, w, h, bg);
-    tft_.setFont(&FreeSansBold9pt7b);
-    tft_.setTextSize(1);
-    tft_.setTextColor(fg, bg);
+    tft_.fillRect(0, plotY, w, h, ST77XX_BLACK);
+    tft_.drawRect(0, plotY, w, h, kPlotBorderColor);
 
-    int16_t x1 = 0;
-    int16_t y1 = 0;
-    uint16_t tw = 0;
-    uint16_t th = 0;
-    tft_.getTextBounds(text, 0, 0, &x1, &y1, &tw, &th);
+    const int midY = plotY + h / 2;
+    tft_.drawFastHLine(1, midY, w - 2, kPlotMidColor);
 
-    int baseline = y + (h - static_cast<int>(y1)) / 2;
-    if (baseline + static_cast<int>(y1) < y + 1) {
-        baseline = y + 1 - static_cast<int>(y1);
+    if (ch1 == nullptr || ch2 == nullptr || count < 2) {
+        return;
     }
-    if (baseline > y + h - 2) {
-        baseline = y + h - 2;
+
+    const int x0 = 1;
+    const int plotW = w - 2;
+    const int yTop = plotY + 2;
+    const int yBot = plotY + h - 3;
+    const int plotInnerH = yBot - yTop;
+    if (plotInnerH <= 0 || plotW <= 0) {
+        return;
     }
-    tft_.setCursor(kPadX - x1, baseline);
-    tft_.print(text);
+
+    auto sampleY = [&](uint8_t sample) -> int {
+        // 255 → top, 0 → bottom
+        return yBot - (static_cast<int>(sample) * plotInnerH) / 255;
+    };
+
+    int prevX = x0;
+    int prevY1 = sampleY(ch1[0]);
+    int prevY2 = sampleY(ch2[0]);
+    for (int i = 1; i < count; ++i) {
+        const int x = x0 + (i * (plotW - 1)) / (count - 1);
+        const int y1 = sampleY(ch1[i]);
+        const int y2 = sampleY(ch2[i]);
+        tft_.drawLine(prevX, prevY1, x, y1, kPlotCh1Color);
+        tft_.drawLine(prevX, prevY2, x, y2, kPlotCh2Color);
+        prevX = x;
+        prevY1 = y1;
+        prevY2 = y2;
+    }
 }
 
 void Display::begin() {
@@ -357,31 +609,42 @@ void Display::begin() {
     hasLast_ = false;
     scrollOffset_ = 0;
     lastScrollOffset_ = -1;
+    lastShowedPlot_ = false;
 }
 
-void Display::render(const ParamSnapshot &state) {
+void Display::render(const ParamSnapshot &state, const WavePlotSamples &plot) {
     char nameBuf[24];
     char valueBuf[16];
-    char summaryBuf[48];
 
     int fieldCount = 0;
-    const FocusField *fields = menuFields(state.menu, fieldCount);
+    const FocusField *fields = menuFields(state, fieldCount);
 
-    const bool menuChanged = !hasLast_ || last_.menu != state.menu;
+    const int menuH = menuHeight(state.menu);
+    const int visRows = visibleFieldRows(state.menu);
+    const bool showPlot = showsPlot(state.menu);
+
+    const bool menuChanged =
+            !hasLast_ || last_.menu != state.menu ||
+            (state.menu == MenuLevel::Signal && last_.dacMode != state.dacMode);
     if (menuChanged) {
         scrollOffset_ = 0;
     }
 
-    ensureFocusVisible(state.focus, fieldCount, fields);
+    ensureFocusVisible(state.focus, fieldCount, fields, visRows);
     const bool scrollChanged = menuChanged || !hasLast_ || scrollOffset_ != lastScrollOffset_;
 
-    for (int screen = 0; screen < kVisibleFieldRows; ++screen) {
+    // Leaving a plot menu for Top: clear former plot band (menu stretch uses full height).
+    if (menuChanged && lastShowedPlot_ && !showPlot) {
+        tft_.fillRect(0, kMenuHWithPlot, tft_.width(), kPlotH, ST77XX_BLACK);
+    }
+
+    for (int screen = 0; screen < visRows; ++screen) {
         const int fieldIndex = scrollOffset_ + screen;
         if (fieldIndex >= fieldCount) {
             if (scrollChanged || menuChanged) {
                 // Clear leftover rows when the new menu is shorter.
-                const int y = rowY(screen);
-                const int h = rowH(screen);
+                const int y = rowY(screen, menuH, visRows);
+                const int h = rowH(screen, menuH, visRows);
                 tft_.fillRect(0, y, tft_.width(), h, ST77XX_BLACK);
             }
             continue;
@@ -396,22 +659,29 @@ void Display::render(const ParamSnapshot &state) {
         if (need) {
             formatFieldName(field, nameBuf, sizeof(nameBuf));
             formatFieldValue(state, field, valueBuf, sizeof(valueBuf));
-            const bool isBack = field == FocusField::SigBack || field == FocusField::PwmBack;
-            drawFieldRow(screen, nameBuf, valueBuf, focused, editing, isBack);
+            const bool isBack = field == FocusField::SigBack || field == FocusField::FreqBack ||
+                                field == FocusField::PhaseBack || field == FocusField::ShiftUsBack ||
+                                field == FocusField::PulseBack || field == FocusField::DutyBack ||
+                                field == FocusField::PwmBack;
+            const bool isCheckbox =
+                    field == FocusField::SigEnabled || field == FocusField::PwmEnabled;
+            const bool checked = field == FocusField::SigEnabled ? state.signalEnabled
+                                                                 : state.pwmEnabled;
+            drawFieldRow(screen, menuH, visRows, nameBuf, valueBuf, focused, editing, isBack,
+                         isCheckbox, isCheckbox && checked);
         }
     }
 
-    const bool summaryNeed =
-            scrollChanged || !hasLast_ || last_.freqHz != state.freqHz ||
-            last_.phaseDegTotal != state.phaseDegTotal || last_.pwmHz != state.pwmHz ||
-            last_.pwmCh1Us != state.pwmCh1Us || last_.pwmCh2Us != state.pwmCh2Us ||
-            last_.signalEnabled != state.signalEnabled || last_.pwmEnabled != state.pwmEnabled;
-    if (summaryNeed) {
-        formatSummary(state, summaryBuf, sizeof(summaryBuf));
-        drawSummaryRow(summaryBuf);
+    if (showPlot) {
+        const bool plotNeed = menuChanged || !hasLast_ || !lastShowedPlot_ ||
+                              plotParamsChanged(last_, state);
+        if (plotNeed && plot.ch1 != nullptr && plot.ch2 != nullptr && plot.count > 0) {
+            drawWavePlot(plot.ch1, plot.ch2, plot.count);
+        }
     }
 
     last_ = state;
     hasLast_ = true;
     lastScrollOffset_ = scrollOffset_;
+    lastShowedPlot_ = showPlot;
 }

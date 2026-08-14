@@ -6,6 +6,7 @@ ESP32-WROOM-32 dual-channel DAC signal generator (PlatformIO / Arduino). CLion-f
 
 1. Read and follow [`~/.cursor/skills/esp32/SKILL.md`](/home/dsporynkhin/.cursor/skills/esp32/SKILL.md).
 2. For SPI or callbacks, also read [`~/.cursor/skills/esp32/patterns.md`](/home/dsporynkhin/.cursor/skills/esp32/patterns.md).
+3. For TFT/screen menu, parameter list, or dialog UI, read and follow [`~/.cursor/skills/tft-ui/SKILL.md`](/home/dsporynkhin/.cursor/skills/tft-ui/SKILL.md).
 
 ## Always-on project rules
 
@@ -14,6 +15,7 @@ Enforced via [`.cursor/rules/`](.cursor/rules/):
 | Rule | Meaning |
 |------|---------|
 | `esp32.mdc` | Apply the esp32 skill before firmware edits |
+| `tft-ui.mdc` | Apply the tft-ui skill for menu/dialog UI |
 | `no-font-upscale.mdc` | No `setTextSize(n≠1)`; use sized GFXfonts; draw bitmaps 1:1 |
 | `no-self-instance-ref.mdc` | No ad-hoc `static Foo *instance` in class files; wire callbacks from `main.cpp` |
 | `ask-before-pins.mdc` | **Always ask** before changing any GPIO / pin assignments |
@@ -22,8 +24,9 @@ Enforced via [`.cursor/rules/`](.cursor/rules/):
 
 - Board: `esp32dev` (ESP32-WROOM-32) — see [`platformio.ini`](platformio.ini)
 - Pins: [`include/pins.h`](include/pins.h)
-- Display: ST7789 240×320, `setRotation(2)` (180°), Adafruit GFX
+- Display: ST7789 240×320, `setRotation(2)` (180°), Adafruit GFX; Signal/PWM submenus show a bottom-¼ CH1+CH2 one-period waveform overlay (summary row removed)
 - Outputs: DAC ch1 GPIO25, DAC ch2 GPIO26 (`PIN_DAC_CH1` / `PIN_DAC_CH2`; same waveform / freq / amplitude; ch2 phase offset)
+- DAC Mode: **Oscillator** (continuous Wave LUT; CH2 phase in degrees) or **Analog PWM** (one Wave cycle compressed into pulse width, idle at 0; CH2 phase shift in µs −9999…+9999; Sine uses sin(A−90°) on both channels). Pulse µs ↔ duty % stay linked. Signal menu nests **Frequency** (both modes), **Phase** (Oscillator), **Shift us** / **Pulse us** / **Duty %** (Analog PWM) with summary values on the parent rows.
 - PWM: ch1 GPIO21, ch2 GPIO22 (`PIN_PWM_CH1` / `PIN_PWM_CH2`; shared freq; per-channel pulse width µs). Can run with DAC; each gated by menu Enabled (default OFF).
 
 ## Hardware notes
@@ -46,7 +49,7 @@ pio device monitor     # 115200
 - **UI:** `setTextSize(1)` with GFXfonts; no bitmap upscaling at draw time; prefer partial TFT redraws.
 - **Callbacks:** register handlers from owners (e.g. `main.cpp`), not fake class singletons.
 - **Channels:** type, frequency, and amplitude are always equal on both DACs; only phase (CH2 relative to CH1; positive => CH2 leads) differs.
-- **DAC + PWM:** both may run together; each is gated by its menu `Enabled` (default OFF). PWM is not a waveform mode.
+- **DAC + PWM:** both may run together; each is gated by its menu `Enabled` (default OFF). Digital LEDC PWM is not a DAC waveform mode; Analog PWM is a DAC Mode that gates a Wave impulse by duty/pulse length.
 - **DAC ISR:** use `dac_ll_update_output_value` for both channels (not `dacWrite`) so inter-channel phase is not skewed by ~10 µs/write.
 - **Phase resolution:** LUT size 32768 → real CH2−CH1 step ≈ 0.011° (requirement ≤ 0.05°).
 
