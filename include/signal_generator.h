@@ -22,6 +22,11 @@ public:
 
     void apply(const ParamSnapshot &params);
 
+    // One period of CH1/CH2 DAC samples (0…255), driven by params (not live DDS).
+    // Mirrors onTimer math: Analog PWM compress/−90°, CH2 phase, amplitude.
+    void fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch1, uint8_t *ch2,
+                           int count) const;
+
     // Called from ISR trampoline owned by main.cpp.
     void IRAM_ATTR onTimer();
 

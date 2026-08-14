@@ -14,6 +14,9 @@ namespace {
     SignalGenerator signalGenerator;
     PwmGenerator pwmGenerator;
 
+    uint8_t plotCh1[Display::kPlotSampleCount];
+    uint8_t plotCh2[Display::kPlotSampleCount];
+
     void IRAM_ATTR onEncoderIsr() {
         encoder.onQuadratureIsr();
     }
@@ -22,13 +25,29 @@ namespace {
         signalGenerator.onTimer();
     }
 
+    WavePlotSamples fillPlotIfNeeded(const ParamSnapshot &params) {
+        WavePlotSamples plot;
+        if (params.menu == MenuLevel::Signal) {
+            signalGenerator.fillPeriodPreview(params, plotCh1, plotCh2, Display::kPlotSampleCount);
+            plot.ch1 = plotCh1;
+            plot.ch2 = plotCh2;
+            plot.count = Display::kPlotSampleCount;
+        } else if (params.menu == MenuLevel::Pwm) {
+            Display::fillPwmPeriodPreview(params, plotCh1, plotCh2, Display::kPlotSampleCount);
+            plot.ch1 = plotCh1;
+            plot.ch2 = plotCh2;
+            plot.count = Display::kPlotSampleCount;
+        }
+        return plot;
+    }
+
     void applyAndPaint() {
         const ParamSnapshot &params = paramModel.snapshot();
         // LEDC PWM is HW-timed and must keep running while DAC is paused for TFT SPI.
         pwmGenerator.apply(params);
         signalGenerator.pause();
         signalGenerator.apply(params);
-        display.render(params);
+        display.render(params, fillPlotIfNeeded(params));
         if (params.signalEnabled) {
             signalGenerator.resume();
         }
@@ -45,8 +64,8 @@ void setup() {
     encoder.begin(PIN_ENCODER_A, PIN_ENCODER_B, PIN_ENCODER_BTN, onEncoderIsr);
     pwmGenerator.begin();
 
-    // Paint UI before the DAC timer is running.
-    display.render(paramModel.snapshot());
+    // Paint UI before the DAC timer is running (Top menu — no plot samples).
+    display.render(paramModel.snapshot(), WavePlotSamples{});
     pwmGenerator.apply(paramModel.snapshot());
 
     signalGenerator.begin(onDacTimerIsr);

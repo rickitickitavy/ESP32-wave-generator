@@ -49,13 +49,27 @@ const char *Display::dacModeName(DacMode mode) {
     }
 }
 
-int Display::rowY(int screenIndex) {
-    // Stretch bands across full TFT height (26/27 px for 12 rows).
-    return (screenIndex * kLogicalH) / kVisibleRows;
+bool Display::showsPlot(MenuLevel menu) {
+    return menu == MenuLevel::Signal || menu == MenuLevel::Pwm;
 }
 
-int Display::rowH(int screenIndex) {
-    return rowY(screenIndex + 1) - rowY(screenIndex);
+int Display::menuHeight(MenuLevel menu) {
+    return showsPlot(menu) ? kMenuHWithPlot : kLogicalH;
+}
+
+int Display::visibleFieldRows(MenuLevel menu) {
+    return menuHeight(menu) / kRowH;
+}
+
+int Display::rowY(int screenIndex, int menuH, int visibleRows) {
+    if (visibleRows <= 0) {
+        return 0;
+    }
+    return (screenIndex * menuH) / visibleRows;
+}
+
+int Display::rowH(int screenIndex, int menuH, int visibleRows) {
+    return rowY(screenIndex + 1, menuH, visibleRows) - rowY(screenIndex, menuH, visibleRows);
 }
 
 void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
@@ -251,20 +265,6 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
     }
 }
 
-void Display::formatSummary(const ParamSnapshot &s, char *buf, size_t buflen) {
-    if (s.dacMode == DacMode::AnalogPwm) {
-        snprintf(buf, buflen, "%s %.0fHz %+dus %s P%.0f %d/%d",
-                 s.signalEnabled ? "DAC" : "dac", static_cast<double>(s.freqHz), s.phaseShiftUs,
-                 s.pwmEnabled ? "PWM" : "pwm", static_cast<double>(s.pwmHz), s.pwmCh1Us,
-                 s.pwmCh2Us);
-    } else {
-        snprintf(buf, buflen, "%s %.0fHz %+.0f° %s P%.0f %d/%d",
-                 s.signalEnabled ? "DAC" : "dac", static_cast<double>(s.freqHz),
-                 static_cast<double>(s.phaseDegTotal), s.pwmEnabled ? "PWM" : "pwm",
-                 static_cast<double>(s.pwmHz), s.pwmCh1Us, s.pwmCh2Us);
-    }
-}
-
 bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, FocusField field) {
     switch (field) {
         case FocusField::GroupSignal:
@@ -332,7 +332,47 @@ bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, Focus
     return false;
 }
 
-void Display::ensureFocusVisible(FocusField focus, int fieldCount, const FocusField *fields) {
+bool Display::plotParamsChanged(const ParamSnapshot &a, const ParamSnapshot &b) {
+    if (a.menu != b.menu) {
+        return true;
+    }
+    if (a.menu == MenuLevel::Signal) {
+        return a.waveform != b.waveform || a.dacMode != b.dacMode || a.ampVolts != b.ampVolts ||
+               a.freqHz != b.freqHz || a.phaseDegTotal != b.phaseDegTotal ||
+               a.phaseShiftUs != b.phaseShiftUs || a.dutyPercent != b.dutyPercent ||
+               a.pulseUs != b.pulseUs;
+    }
+    if (a.menu == MenuLevel::Pwm) {
+        return a.pwmHz != b.pwmHz || a.pwmCh1Us != b.pwmCh1Us || a.pwmCh2Us != b.pwmCh2Us;
+    }
+    return false;
+}
+
+void Display::fillPwmPeriodPreview(const ParamSnapshot &params, uint8_t *ch1, uint8_t *ch2,
+                                   int count) {
+    if (ch1 == nullptr || ch2 == nullptr || count <= 0) {
+        return;
+    }
+
+    float hz = params.pwmHz;
+    if (hz < 0.1f) {
+        hz = 0.1f;
+    }
+    const float periodUs = 1000000.0f / hz;
+    const float high1 = static_cast<float>(params.pwmCh1Us);
+    const float high2 = static_cast<float>(params.pwmCh2Us);
+
+    for (int i = 0; i < count; ++i) {
+        const float tUs =
+                (count == 1) ? 0.0f
+                             : (static_cast<float>(i) / static_cast<float>(count)) * periodUs;
+        ch1[i] = (tUs < high1) ? 255 : 0;
+        ch2[i] = (tUs < high2) ? 255 : 0;
+    }
+}
+
+void Display::ensureFocusVisible(FocusField focus, int fieldCount, const FocusField *fields,
+                                 int visibleRows) {
     int focusIndex = 0;
     for (int i = 0; i < fieldCount; ++i) {
         if (fields[i] == focus) {
@@ -343,11 +383,11 @@ void Display::ensureFocusVisible(FocusField focus, int fieldCount, const FocusFi
 
     if (focusIndex < scrollOffset_) {
         scrollOffset_ = focusIndex;
-    } else if (focusIndex >= scrollOffset_ + kVisibleFieldRows) {
-        scrollOffset_ = focusIndex - kVisibleFieldRows + 1;
+    } else if (focusIndex >= scrollOffset_ + visibleRows) {
+        scrollOffset_ = focusIndex - visibleRows + 1;
     }
 
-    const int maxOffset = fieldCount - kVisibleFieldRows;
+    const int maxOffset = fieldCount - visibleRows;
     if (scrollOffset_ < 0) {
         scrollOffset_ = 0;
     }
@@ -395,10 +435,11 @@ void Display::drawCheckbox(int rowY, int rowH, bool checked, bool focused, bool 
     }
 }
 
-void Display::drawFieldRow(int screenIndex, const char *name, const char *value, bool focused,
-                           bool editing, bool isBack, bool isCheckbox, bool checked) {
-    const int y = rowY(screenIndex);
-    const int h = rowH(screenIndex);
+void Display::drawFieldRow(int screenIndex, int menuH, int visibleRows, const char *name,
+                           const char *value, bool focused, bool editing, bool isBack,
+                           bool isCheckbox, bool checked) {
+    const int y = rowY(screenIndex, menuH, visibleRows);
+    const int h = rowH(screenIndex, menuH, visibleRows);
     const int w = tft_.width();
 
     uint16_t bg = ST77XX_BLACK;
@@ -457,33 +498,48 @@ void Display::drawFieldRow(int screenIndex, const char *name, const char *value,
     }
 }
 
-void Display::drawSummaryRow(const char *text) {
-    const int y = rowY(kSummaryScreenRow);
-    const int h = rowH(kSummaryScreenRow);
+void Display::drawWavePlot(const uint8_t *ch1, const uint8_t *ch2, int count) {
+    const int plotY = kMenuHWithPlot;
     const int w = tft_.width();
-    const uint16_t bg = ST77XX_BLACK;
-    const uint16_t fg = ST77XX_YELLOW;
+    const int h = kPlotH;
 
-    tft_.fillRect(0, y, w, h, bg);
-    tft_.setFont(&FreeSansBold9pt7b);
-    tft_.setTextSize(1);
-    tft_.setTextColor(fg, bg);
+    tft_.fillRect(0, plotY, w, h, ST77XX_BLACK);
+    tft_.drawRect(0, plotY, w, h, kPlotBorderColor);
 
-    int16_t x1 = 0;
-    int16_t y1 = 0;
-    uint16_t tw = 0;
-    uint16_t th = 0;
-    tft_.getTextBounds(text, 0, 0, &x1, &y1, &tw, &th);
+    const int midY = plotY + h / 2;
+    tft_.drawFastHLine(1, midY, w - 2, kPlotMidColor);
 
-    int baseline = y + (h - static_cast<int>(y1)) / 2;
-    if (baseline + static_cast<int>(y1) < y + 1) {
-        baseline = y + 1 - static_cast<int>(y1);
+    if (ch1 == nullptr || ch2 == nullptr || count < 2) {
+        return;
     }
-    if (baseline > y + h - 2) {
-        baseline = y + h - 2;
+
+    const int x0 = 1;
+    const int plotW = w - 2;
+    const int yTop = plotY + 2;
+    const int yBot = plotY + h - 3;
+    const int plotInnerH = yBot - yTop;
+    if (plotInnerH <= 0 || plotW <= 0) {
+        return;
     }
-    tft_.setCursor(kPadX - x1, baseline);
-    tft_.print(text);
+
+    auto sampleY = [&](uint8_t sample) -> int {
+        // 255 → top, 0 → bottom
+        return yBot - (static_cast<int>(sample) * plotInnerH) / 255;
+    };
+
+    int prevX = x0;
+    int prevY1 = sampleY(ch1[0]);
+    int prevY2 = sampleY(ch2[0]);
+    for (int i = 1; i < count; ++i) {
+        const int x = x0 + (i * (plotW - 1)) / (count - 1);
+        const int y1 = sampleY(ch1[i]);
+        const int y2 = sampleY(ch2[i]);
+        tft_.drawLine(prevX, prevY1, x, y1, kPlotCh1Color);
+        tft_.drawLine(prevX, prevY2, x, y2, kPlotCh2Color);
+        prevX = x;
+        prevY1 = y1;
+        prevY2 = y2;
+    }
 }
 
 void Display::begin() {
@@ -494,15 +550,19 @@ void Display::begin() {
     hasLast_ = false;
     scrollOffset_ = 0;
     lastScrollOffset_ = -1;
+    lastShowedPlot_ = false;
 }
 
-void Display::render(const ParamSnapshot &state) {
+void Display::render(const ParamSnapshot &state, const WavePlotSamples &plot) {
     char nameBuf[24];
     char valueBuf[16];
-    char summaryBuf[48];
 
     int fieldCount = 0;
     const FocusField *fields = menuFields(state, fieldCount);
+
+    const int menuH = menuHeight(state.menu);
+    const int visRows = visibleFieldRows(state.menu);
+    const bool showPlot = showsPlot(state.menu);
 
     const bool menuChanged =
             !hasLast_ || last_.menu != state.menu ||
@@ -511,16 +571,21 @@ void Display::render(const ParamSnapshot &state) {
         scrollOffset_ = 0;
     }
 
-    ensureFocusVisible(state.focus, fieldCount, fields);
+    ensureFocusVisible(state.focus, fieldCount, fields, visRows);
     const bool scrollChanged = menuChanged || !hasLast_ || scrollOffset_ != lastScrollOffset_;
 
-    for (int screen = 0; screen < kVisibleFieldRows; ++screen) {
+    // Leaving a plot menu for Top: clear former plot band (menu stretch uses full height).
+    if (menuChanged && lastShowedPlot_ && !showPlot) {
+        tft_.fillRect(0, kMenuHWithPlot, tft_.width(), kPlotH, ST77XX_BLACK);
+    }
+
+    for (int screen = 0; screen < visRows; ++screen) {
         const int fieldIndex = scrollOffset_ + screen;
         if (fieldIndex >= fieldCount) {
             if (scrollChanged || menuChanged) {
                 // Clear leftover rows when the new menu is shorter.
-                const int y = rowY(screen);
-                const int h = rowH(screen);
+                const int y = rowY(screen, menuH, visRows);
+                const int h = rowH(screen, menuH, visRows);
                 tft_.fillRect(0, y, tft_.width(), h, ST77XX_BLACK);
             }
             continue;
@@ -540,23 +605,21 @@ void Display::render(const ParamSnapshot &state) {
                     field == FocusField::SigEnabled || field == FocusField::PwmEnabled;
             const bool checked = field == FocusField::SigEnabled ? state.signalEnabled
                                                                  : state.pwmEnabled;
-            drawFieldRow(screen, nameBuf, valueBuf, focused, editing, isBack, isCheckbox,
-                         isCheckbox && checked);
+            drawFieldRow(screen, menuH, visRows, nameBuf, valueBuf, focused, editing, isBack,
+                         isCheckbox, isCheckbox && checked);
         }
     }
 
-    const bool summaryNeed =
-            scrollChanged || !hasLast_ || last_.freqHz != state.freqHz ||
-            last_.phaseDegTotal != state.phaseDegTotal || last_.phaseShiftUs != state.phaseShiftUs ||
-            last_.dacMode != state.dacMode || last_.pwmHz != state.pwmHz ||
-            last_.pwmCh1Us != state.pwmCh1Us || last_.pwmCh2Us != state.pwmCh2Us ||
-            last_.signalEnabled != state.signalEnabled || last_.pwmEnabled != state.pwmEnabled;
-    if (summaryNeed) {
-        formatSummary(state, summaryBuf, sizeof(summaryBuf));
-        drawSummaryRow(summaryBuf);
+    if (showPlot) {
+        const bool plotNeed = menuChanged || !hasLast_ || !lastShowedPlot_ ||
+                              plotParamsChanged(last_, state);
+        if (plotNeed && plot.ch1 != nullptr && plot.ch2 != nullptr && plot.count > 0) {
+            drawWavePlot(plot.ch1, plot.ch2, plot.count);
+        }
     }
 
     last_ = state;
     hasLast_ = true;
     lastScrollOffset_ = scrollOffset_;
+    lastShowedPlot_ = showPlot;
 }
