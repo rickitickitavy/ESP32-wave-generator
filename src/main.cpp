@@ -27,7 +27,9 @@ namespace {
 
     WavePlotSamples fillPlotIfNeeded(const ParamSnapshot &params) {
         WavePlotSamples plot;
-        if (params.menu == MenuLevel::Signal) {
+        if (params.menu == MenuLevel::Signal || params.menu == MenuLevel::SigFreq ||
+            params.menu == MenuLevel::SigPhase || params.menu == MenuLevel::SigShiftUs ||
+            params.menu == MenuLevel::SigPulse || params.menu == MenuLevel::SigDuty) {
             signalGenerator.fillPeriodPreview(params, plotCh1, plotCh2, Display::kPlotSampleCount);
             plot.ch1 = plotCh1;
             plot.ch2 = plotCh2;

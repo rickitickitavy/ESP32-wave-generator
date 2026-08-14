@@ -69,20 +69,40 @@ namespace {
     };
 
     constexpr FocusField kSignalOscFields[] = {
-            FocusField::SigBack,      FocusField::SigEnabled, FocusField::SigMode,
-            FocusField::Waveform,     FocusField::Amplitude,  FocusField::FreqKHz,
-            FocusField::FreqHundredHz, FocusField::FreqTensHz, FocusField::FreqHz,
-            FocusField::PhaseTens,    FocusField::PhaseDeg,   FocusField::PhaseFine,
+            FocusField::SigBack,  FocusField::SigEnabled, FocusField::SigMode,
+            FocusField::Waveform, FocusField::Amplitude,  FocusField::GroupFreq,
+            FocusField::GroupPhase,
     };
 
     constexpr FocusField kSignalAnalogPwmFields[] = {
-            FocusField::SigBack,       FocusField::SigEnabled, FocusField::SigMode,
-            FocusField::Waveform,      FocusField::Amplitude,  FocusField::FreqKHz,
-            FocusField::FreqHundredHz, FocusField::FreqTensHz, FocusField::FreqHz,
-            FocusField::PhaseUs1000, FocusField::PhaseUs100, FocusField::PhaseUs10,
-            FocusField::PhaseUs1,
-            FocusField::PulseUs100,    FocusField::PulseUs10,  FocusField::PulseUs1,
-            FocusField::Duty10,        FocusField::Duty1,      FocusField::DutyTenths,
+            FocusField::SigBack,      FocusField::SigEnabled, FocusField::SigMode,
+            FocusField::Waveform,     FocusField::Amplitude,  FocusField::GroupFreq,
+            FocusField::GroupShiftUs, FocusField::GroupPulse, FocusField::GroupDuty,
+    };
+
+    constexpr FocusField kSigFreqFields[] = {
+            FocusField::FreqBack,      FocusField::FreqKHz, FocusField::FreqHundredHz,
+            FocusField::FreqTensHz,    FocusField::FreqHz,
+    };
+
+    constexpr FocusField kSigPhaseFields[] = {
+            FocusField::PhaseBack, FocusField::PhaseTens, FocusField::PhaseDeg,
+            FocusField::PhaseFine,
+    };
+
+    constexpr FocusField kSigShiftUsFields[] = {
+            FocusField::ShiftUsBack, FocusField::PhaseUs1000, FocusField::PhaseUs100,
+            FocusField::PhaseUs10,   FocusField::PhaseUs1,
+    };
+
+    constexpr FocusField kSigPulseFields[] = {
+            FocusField::PulseBack, FocusField::PulseUs100, FocusField::PulseUs10,
+            FocusField::PulseUs1,
+    };
+
+    constexpr FocusField kSigDutyFields[] = {
+            FocusField::DutyBack, FocusField::Duty10, FocusField::Duty1,
+            FocusField::DutyTenths,
     };
 
     constexpr FocusField kPwmFields[] = {
@@ -111,6 +131,21 @@ const FocusField *menuFields(const ParamSnapshot &state, int &count) {
             }
             count = static_cast<int>(sizeof(kSignalOscFields) / sizeof(kSignalOscFields[0]));
             return kSignalOscFields;
+        case MenuLevel::SigFreq:
+            count = static_cast<int>(sizeof(kSigFreqFields) / sizeof(kSigFreqFields[0]));
+            return kSigFreqFields;
+        case MenuLevel::SigPhase:
+            count = static_cast<int>(sizeof(kSigPhaseFields) / sizeof(kSigPhaseFields[0]));
+            return kSigPhaseFields;
+        case MenuLevel::SigShiftUs:
+            count = static_cast<int>(sizeof(kSigShiftUsFields) / sizeof(kSigShiftUsFields[0]));
+            return kSigShiftUsFields;
+        case MenuLevel::SigPulse:
+            count = static_cast<int>(sizeof(kSigPulseFields) / sizeof(kSigPulseFields[0]));
+            return kSigPulseFields;
+        case MenuLevel::SigDuty:
+            count = static_cast<int>(sizeof(kSigDutyFields) / sizeof(kSigDutyFields[0]));
+            return kSigDutyFields;
         case MenuLevel::Pwm:
             count = static_cast<int>(sizeof(kPwmFields) / sizeof(kPwmFields[0]));
             return kPwmFields;
@@ -225,9 +260,59 @@ void ParamModel::toggleEdit() {
             state_.focus = FocusField::PwmEnabled;
             state_.editing = false;
             return;
+        case FocusField::GroupFreq:
+            state_.menu = MenuLevel::SigFreq;
+            state_.focus = FocusField::FreqKHz;
+            state_.editing = false;
+            return;
+        case FocusField::GroupPhase:
+            state_.menu = MenuLevel::SigPhase;
+            state_.focus = FocusField::PhaseTens;
+            state_.editing = false;
+            return;
+        case FocusField::GroupShiftUs:
+            state_.menu = MenuLevel::SigShiftUs;
+            state_.focus = FocusField::PhaseUs1000;
+            state_.editing = false;
+            return;
+        case FocusField::GroupPulse:
+            state_.menu = MenuLevel::SigPulse;
+            state_.focus = FocusField::PulseUs100;
+            state_.editing = false;
+            return;
+        case FocusField::GroupDuty:
+            state_.menu = MenuLevel::SigDuty;
+            state_.focus = FocusField::Duty10;
+            state_.editing = false;
+            return;
         case FocusField::SigBack:
             state_.menu = MenuLevel::Top;
             state_.focus = FocusField::GroupSignal;
+            state_.editing = false;
+            return;
+        case FocusField::FreqBack:
+            state_.menu = MenuLevel::Signal;
+            state_.focus = FocusField::GroupFreq;
+            state_.editing = false;
+            return;
+        case FocusField::PhaseBack:
+            state_.menu = MenuLevel::Signal;
+            state_.focus = FocusField::GroupPhase;
+            state_.editing = false;
+            return;
+        case FocusField::ShiftUsBack:
+            state_.menu = MenuLevel::Signal;
+            state_.focus = FocusField::GroupShiftUs;
+            state_.editing = false;
+            return;
+        case FocusField::PulseBack:
+            state_.menu = MenuLevel::Signal;
+            state_.focus = FocusField::GroupPulse;
+            state_.editing = false;
+            return;
+        case FocusField::DutyBack:
+            state_.menu = MenuLevel::Signal;
+            state_.focus = FocusField::GroupDuty;
             state_.editing = false;
             return;
         case FocusField::PwmBack:
@@ -282,7 +367,17 @@ void ParamModel::applyEncoderDelta(int steps) {
     switch (state_.focus) {
         case FocusField::GroupSignal:
         case FocusField::GroupPwm:
+        case FocusField::GroupFreq:
+        case FocusField::GroupPhase:
+        case FocusField::GroupShiftUs:
+        case FocusField::GroupPulse:
+        case FocusField::GroupDuty:
         case FocusField::SigBack:
+        case FocusField::FreqBack:
+        case FocusField::PhaseBack:
+        case FocusField::ShiftUsBack:
+        case FocusField::PulseBack:
+        case FocusField::DutyBack:
         case FocusField::PwmBack:
             break;
         case FocusField::SigEnabled:
@@ -421,7 +516,9 @@ void ParamModel::applyEncoderDelta(int steps) {
     }
 
     recompute();
-    if (state_.menu == MenuLevel::Signal) {
+    if (state_.menu == MenuLevel::Signal || state_.menu == MenuLevel::SigFreq ||
+        state_.menu == MenuLevel::SigPhase || state_.menu == MenuLevel::SigShiftUs ||
+        state_.menu == MenuLevel::SigPulse || state_.menu == MenuLevel::SigDuty) {
         ensureFocusVisibleInMenu();
     }
 }

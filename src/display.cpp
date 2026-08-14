@@ -50,7 +50,9 @@ const char *Display::dacModeName(DacMode mode) {
 }
 
 bool Display::showsPlot(MenuLevel menu) {
-    return menu == MenuLevel::Signal || menu == MenuLevel::Pwm;
+    return menu == MenuLevel::Signal || menu == MenuLevel::SigFreq || menu == MenuLevel::SigPhase ||
+           menu == MenuLevel::SigShiftUs || menu == MenuLevel::SigPulse ||
+           menu == MenuLevel::SigDuty || menu == MenuLevel::Pwm;
 }
 
 int Display::menuHeight(MenuLevel menu) {
@@ -80,6 +82,21 @@ void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
         case FocusField::GroupPwm:
             snprintf(buf, buflen, "PWM");
             break;
+        case FocusField::GroupFreq:
+            snprintf(buf, buflen, "Frequency");
+            break;
+        case FocusField::GroupPhase:
+            snprintf(buf, buflen, "Phase");
+            break;
+        case FocusField::GroupShiftUs:
+            snprintf(buf, buflen, "Shift us");
+            break;
+        case FocusField::GroupPulse:
+            snprintf(buf, buflen, "Pulse us");
+            break;
+        case FocusField::GroupDuty:
+            snprintf(buf, buflen, "Duty %%");
+            break;
         case FocusField::SigEnabled:
         case FocusField::PwmEnabled:
             snprintf(buf, buflen, "Enabled");
@@ -88,6 +105,11 @@ void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
             snprintf(buf, buflen, "Mode");
             break;
         case FocusField::SigBack:
+        case FocusField::FreqBack:
+        case FocusField::PhaseBack:
+        case FocusField::ShiftUsBack:
+        case FocusField::PulseBack:
+        case FocusField::DutyBack:
         case FocusField::PwmBack:
             snprintf(buf, buflen, "BACK");
             break;
@@ -175,7 +197,27 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
         case FocusField::GroupPwm:
             snprintf(buf, buflen, ">");
             break;
+        case FocusField::GroupFreq:
+            snprintf(buf, buflen, "%.1f", static_cast<double>(s.freqHz));
+            break;
+        case FocusField::GroupPhase:
+            snprintf(buf, buflen, "%+.1f", static_cast<double>(s.phaseDegTotal));
+            break;
+        case FocusField::GroupShiftUs:
+            snprintf(buf, buflen, "%+d", s.phaseShiftUs);
+            break;
+        case FocusField::GroupPulse:
+            snprintf(buf, buflen, "%d", s.pulseUs);
+            break;
+        case FocusField::GroupDuty:
+            snprintf(buf, buflen, "%.1f%%", static_cast<double>(s.dutyPercent));
+            break;
         case FocusField::SigBack:
+        case FocusField::FreqBack:
+        case FocusField::PhaseBack:
+        case FocusField::ShiftUsBack:
+        case FocusField::PulseBack:
+        case FocusField::DutyBack:
         case FocusField::PwmBack:
             buf[0] = '\0';
             break;
@@ -270,8 +312,23 @@ bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, Focus
         case FocusField::GroupSignal:
         case FocusField::GroupPwm:
         case FocusField::SigBack:
+        case FocusField::FreqBack:
+        case FocusField::PhaseBack:
+        case FocusField::ShiftUsBack:
+        case FocusField::PulseBack:
+        case FocusField::DutyBack:
         case FocusField::PwmBack:
             return false;
+        case FocusField::GroupFreq:
+            return a.freqHz != b.freqHz;
+        case FocusField::GroupPhase:
+            return a.phaseDegTotal != b.phaseDegTotal;
+        case FocusField::GroupShiftUs:
+            return a.phaseShiftUs != b.phaseShiftUs;
+        case FocusField::GroupPulse:
+            return a.pulseUs != b.pulseUs;
+        case FocusField::GroupDuty:
+            return a.dutyPercent != b.dutyPercent;
         case FocusField::SigEnabled:
             return a.signalEnabled != b.signalEnabled;
         case FocusField::PwmEnabled:
@@ -336,7 +393,9 @@ bool Display::plotParamsChanged(const ParamSnapshot &a, const ParamSnapshot &b) 
     if (a.menu != b.menu) {
         return true;
     }
-    if (a.menu == MenuLevel::Signal) {
+    if (a.menu == MenuLevel::Signal || a.menu == MenuLevel::SigFreq ||
+        a.menu == MenuLevel::SigPhase || a.menu == MenuLevel::SigShiftUs ||
+        a.menu == MenuLevel::SigPulse || a.menu == MenuLevel::SigDuty) {
         return a.waveform != b.waveform || a.dacMode != b.dacMode || a.ampVolts != b.ampVolts ||
                a.freqHz != b.freqHz || a.phaseDegTotal != b.phaseDegTotal ||
                a.phaseShiftUs != b.phaseShiftUs || a.dutyPercent != b.dutyPercent ||
@@ -600,7 +659,10 @@ void Display::render(const ParamSnapshot &state, const WavePlotSamples &plot) {
         if (need) {
             formatFieldName(field, nameBuf, sizeof(nameBuf));
             formatFieldValue(state, field, valueBuf, sizeof(valueBuf));
-            const bool isBack = field == FocusField::SigBack || field == FocusField::PwmBack;
+            const bool isBack = field == FocusField::SigBack || field == FocusField::FreqBack ||
+                                field == FocusField::PhaseBack || field == FocusField::ShiftUsBack ||
+                                field == FocusField::PulseBack || field == FocusField::DutyBack ||
+                                field == FocusField::PwmBack;
             const bool isCheckbox =
                     field == FocusField::SigEnabled || field == FocusField::PwmEnabled;
             const bool checked = field == FocusField::SigEnabled ? state.signalEnabled
