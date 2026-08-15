@@ -593,8 +593,19 @@ void Display::drawWavePlot(const uint8_t *ch1, const uint8_t *ch2, int count) {
         const int x = x0 + (i * (plotW - 1)) / (count - 1);
         const int y1 = sampleY(ch1[i]);
         const int y2 = sampleY(ch2[i]);
-        tft_.drawLine(prevX, prevY1, x, y1, kPlotCh1Color);
-        tft_.drawLine(prevX, prevY2, x, y2, kPlotCh2Color);
+        // Sample-and-hold: flat hold then vertical edge (DAC stair look).
+        if (x > prevX) {
+            tft_.drawFastHLine(prevX, prevY1, x - prevX, kPlotCh1Color);
+            tft_.drawFastHLine(prevX, prevY2, x - prevX, kPlotCh2Color);
+        }
+        if (y1 != prevY1) {
+            tft_.drawFastVLine(x, (y1 < prevY1) ? y1 : prevY1, abs(y1 - prevY1) + 1,
+                               kPlotCh1Color);
+        }
+        if (y2 != prevY2) {
+            tft_.drawFastVLine(x, (y2 < prevY2) ? y2 : prevY2, abs(y2 - prevY2) + 1,
+                               kPlotCh2Color);
+        }
         prevX = x;
         prevY1 = y1;
         prevY2 = y2;

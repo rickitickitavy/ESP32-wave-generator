@@ -1,14 +1,21 @@
 #pragma once
 
 #include <Arduino.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 
 #include "param_model.h"
 
+struct dac_continuous_s;
+using DacContinuousHandle = struct dac_continuous_s *;
+
 class SignalGenerator {
 public:
-    void begin(void (*timerIsr)());
+    void begin();
 
-    // Stop/start DAC ISR around SPI TFT updates (high-rate ISR starves SPI / loop).
+    // Mute DAC to midscale around SPI TFT updates / while disabled.
+    // DMA keeps running; refill task writes 128,128 while paused.
     void pause();
     void resume();
 
@@ -22,37 +29,49 @@ public:
 
     void apply(const ParamSnapshot &params);
 
-    // One period of CH1/CH2 DAC samples (0…255), driven by params (not live DDS).
-    // Mirrors onTimer math: Analog PWM compress/−90°, CH2 phase, amplitude.
+    // One-period CH1/CH2 preview: horizontal axis is one wave period, but values are
+    // the real DAC samples at kSampleRateHz (sample-and-hold into `count` pixels →
+    // coarse stairs at high freq, smooth at low freq).
     void fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch1, uint8_t *ch2,
                            int count) const;
 
-    // Called from ISR trampoline owned by main.cpp.
-    void IRAM_ATTR onTimer();
+    static constexpr float sampleRateHz() { return kSampleRateHz; }
 
 private:
-    void buildLuts();
+    void fillLut(Waveform waveform);
     void setAnalogPwmDuty(float dutyPercent);
-    const uint8_t *baseLut(Waveform waveform) const;
+    static uint8_t sampleAt(Waveform waveform, int index);
     static uint32_t freqToPhaseInc(float freqHz);
-    static uint8_t IRAM_ATTR scaleSample(uint8_t sample, uint16_t gainQ8);
+    static uint8_t scaleSample(uint8_t sample, uint16_t gainQ8);
+
+    // Render one stereo sample from DDS state (does not advance phase_).
+    static void renderPair(uint32_t phase, uint32_t phaseOffset, const uint8_t *lut,
+                           uint16_t gainQ8, bool analogPwm, bool sineNeg90, uint32_t pulseEnd,
+                           uint32_t scaleQ16, uint8_t *ch1, uint8_t *ch2);
+
+    void fillDmaChunk(uint8_t *dst, size_t byteCount);
+    void refillTaskLoop();
+    static void refillTaskEntry(void *arg);
 
     // 32768 → phase step 360/32768 ≈ 0.011° (must be ≤ 0.05° real resolution).
     static constexpr int kLutSize = 32768;
     static constexpr int kLutIndexShift = 17; // 32 - log2(32768)
     static constexpr int kLutQuarter = kLutSize / 4; // 90° in LUT indices
     static constexpr float kSampleRateHz = 100000.0f;
-    static constexpr uint64_t kTimerAlarmUs = 10; // 1 MHz timer → 100 kHz
+    // ALTER mode: 2 bytes per stereo sample → DMA byte rate = 2 * sample rate.
+    static constexpr uint32_t kDmaFreqHz = static_cast<uint32_t>(kSampleRateHz) * 2u;
+    static constexpr uint32_t kDmaDescNum = 8;
+    static constexpr size_t kDmaBufSize = 512;
     static constexpr float kDacFullScaleV = 3.3f;
+    static constexpr uint8_t kMidscale = 128;
 
     static_assert((1 << (32 - kLutIndexShift)) == kLutSize, "LUT size/shift mismatch");
     static_assert(360.0f / static_cast<float>(kLutSize) <= 0.05f, "phase step must be <= 0.05 deg");
 
-    uint8_t lutSine_[kLutSize]{};
-    uint8_t lutTriangle_[kLutSize]{};
-    uint8_t lutRect_[kLutSize]{};
+    // Single shared wave table; rewritten when waveform changes.
+    uint8_t lut_[kLutSize]{};
+    Waveform waveform_ = Waveform::Sine;
 
-    const uint8_t *volatile lut_ = nullptr;
     volatile uint32_t phase_ = 0;
     volatile uint32_t phaseInc_ = 0;
     volatile uint32_t phaseOffset_ = 0;
@@ -67,5 +86,9 @@ private:
     volatile uint32_t analogPwmPulseEnd_ = 0;
     volatile uint32_t analogPwmScaleQ16_ = 0;
 
-    hw_timer_t *timer_ = nullptr;
+    volatile bool paused_ = true;
+
+    DacContinuousHandle dac_ = nullptr;
+    QueueHandle_t dmaEventQue_ = nullptr;
+    TaskHandle_t refillTask_ = nullptr;
 };
