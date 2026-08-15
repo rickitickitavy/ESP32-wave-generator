@@ -499,7 +499,7 @@ void SignalGenerator::fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch
 
     if (params.plotRealWaveform) {
         const uint32_t phaseInc = freqToPhaseInc(params.freqHz);
-        // Real DAC samples in one period at Fs (e.g. 100 kHz / 10 kHz → 10 steps).
+        // Real DAC samples in one period at Fs (e.g. 400 kHz / 10 kHz → 40 steps).
         float freqHz = params.freqHz;
         if (freqHz < 0.1f) {
             freqHz = 0.1f;
