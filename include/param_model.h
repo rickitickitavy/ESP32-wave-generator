@@ -32,6 +32,7 @@ enum class FocusField : uint8_t {
     SigEnabled,
     SigMode,
     Waveform,
+    SigRealForm,
     Amplitude,
     GroupFreq,
     FreqBack,
@@ -111,6 +112,8 @@ struct ParamSnapshot {
 
     bool signalEnabled = false;
     bool pwmEnabled = false;
+    // TFT plot: true = Fs/freq sample-and-hold stairs; false = ideal smooth one-period.
+    bool plotRealWaveform = true;
 
     MenuLevel menu = MenuLevel::Top;
     FocusField focus = FocusField::GroupSignal;
