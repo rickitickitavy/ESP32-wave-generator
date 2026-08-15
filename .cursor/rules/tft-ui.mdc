@@ -1,0 +1,8 @@
+---
+description: Apply tft-ui skill for TFT/screen menu and dialog UI in this repo
+alwaysApply: true
+---
+
+# TFT UI skill
+
+Before editing TFT/screen menu, parameter list, or dialog UI in this project, read and follow `~/.cursor/skills/tft-ui/SKILL.md` (and `reference.md` when drawing BACK rows, separators, or Confirm/Cancel buttons).
