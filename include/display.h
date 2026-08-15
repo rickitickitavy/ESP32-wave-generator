@@ -49,7 +49,7 @@ private:
     void drawFieldRow(int screenIndex, int menuH, int visibleRows, const char *name,
                       const char *value, bool focused, bool editing, bool isBack, bool isCheckbox,
                       bool checked);
-    void drawWavePlot(const uint8_t *ch1, const uint8_t *ch2, int count);
+    void drawWavePlot(const uint8_t *ch1, const uint8_t *ch2, int count, bool sampleHold);
 
     static constexpr int kLogicalW = 240;
     static constexpr int kLogicalH = 320;

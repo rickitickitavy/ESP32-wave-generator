@@ -70,14 +70,15 @@ namespace {
 
     constexpr FocusField kSignalOscFields[] = {
             FocusField::SigBack,  FocusField::SigEnabled, FocusField::SigMode,
-            FocusField::Waveform, FocusField::Amplitude,  FocusField::GroupFreq,
-            FocusField::GroupPhase,
+            FocusField::Waveform, FocusField::SigRealForm, FocusField::Amplitude,
+            FocusField::GroupFreq, FocusField::GroupPhase,
     };
 
     constexpr FocusField kSignalAnalogPwmFields[] = {
-            FocusField::SigBack,      FocusField::SigEnabled, FocusField::SigMode,
-            FocusField::Waveform,     FocusField::Amplitude,  FocusField::GroupFreq,
-            FocusField::GroupShiftUs, FocusField::GroupPulse, FocusField::GroupDuty,
+            FocusField::SigBack,      FocusField::SigEnabled,   FocusField::SigMode,
+            FocusField::Waveform,     FocusField::SigRealForm,  FocusField::Amplitude,
+            FocusField::GroupFreq,    FocusField::GroupShiftUs, FocusField::GroupPulse,
+            FocusField::GroupDuty,
     };
 
     constexpr FocusField kSigFreqFields[] = {
@@ -382,6 +383,9 @@ void ParamModel::applyEncoderDelta(int steps) {
             break;
         case FocusField::SigEnabled:
             state_.signalEnabled = !state_.signalEnabled;
+            break;
+        case FocusField::SigRealForm:
+            state_.plotRealWaveform = !state_.plotRealWaveform;
             break;
         case FocusField::PwmEnabled:
             state_.pwmEnabled = !state_.pwmEnabled;

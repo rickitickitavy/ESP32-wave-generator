@@ -116,6 +116,9 @@ void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
         case FocusField::Waveform:
             snprintf(buf, buflen, "Wave");
             break;
+        case FocusField::SigRealForm:
+            snprintf(buf, buflen, "Real form");
+            break;
         case FocusField::Amplitude:
             snprintf(buf, buflen, "Amp V");
             break;
@@ -223,6 +226,7 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
             break;
         case FocusField::SigEnabled:
         case FocusField::PwmEnabled:
+        case FocusField::SigRealForm:
             // Value drawn as checkbox, not ON/OFF text.
             buf[0] = '\0';
             break;
@@ -331,6 +335,8 @@ bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, Focus
             return a.dutyPercent != b.dutyPercent;
         case FocusField::SigEnabled:
             return a.signalEnabled != b.signalEnabled;
+        case FocusField::SigRealForm:
+            return a.plotRealWaveform != b.plotRealWaveform;
         case FocusField::PwmEnabled:
             return a.pwmEnabled != b.pwmEnabled;
         case FocusField::SigMode:
@@ -399,7 +405,7 @@ bool Display::plotParamsChanged(const ParamSnapshot &a, const ParamSnapshot &b) 
         return a.waveform != b.waveform || a.dacMode != b.dacMode || a.ampVolts != b.ampVolts ||
                a.freqHz != b.freqHz || a.phaseDegTotal != b.phaseDegTotal ||
                a.phaseShiftUs != b.phaseShiftUs || a.dutyPercent != b.dutyPercent ||
-               a.pulseUs != b.pulseUs;
+               a.pulseUs != b.pulseUs || a.plotRealWaveform != b.plotRealWaveform;
     }
     if (a.menu == MenuLevel::Pwm) {
         return a.pwmHz != b.pwmHz || a.pwmCh1Us != b.pwmCh1Us || a.pwmCh2Us != b.pwmCh2Us;
@@ -557,7 +563,7 @@ void Display::drawFieldRow(int screenIndex, int menuH, int visibleRows, const ch
     }
 }
 
-void Display::drawWavePlot(const uint8_t *ch1, const uint8_t *ch2, int count) {
+void Display::drawWavePlot(const uint8_t *ch1, const uint8_t *ch2, int count, bool sampleHold) {
     const int plotY = kMenuHWithPlot;
     const int w = tft_.width();
     const int h = kPlotH;
@@ -593,18 +599,23 @@ void Display::drawWavePlot(const uint8_t *ch1, const uint8_t *ch2, int count) {
         const int x = x0 + (i * (plotW - 1)) / (count - 1);
         const int y1 = sampleY(ch1[i]);
         const int y2 = sampleY(ch2[i]);
-        // Sample-and-hold: flat hold then vertical edge (DAC stair look).
-        if (x > prevX) {
-            tft_.drawFastHLine(prevX, prevY1, x - prevX, kPlotCh1Color);
-            tft_.drawFastHLine(prevX, prevY2, x - prevX, kPlotCh2Color);
-        }
-        if (y1 != prevY1) {
-            tft_.drawFastVLine(x, (y1 < prevY1) ? y1 : prevY1, abs(y1 - prevY1) + 1,
-                               kPlotCh1Color);
-        }
-        if (y2 != prevY2) {
-            tft_.drawFastVLine(x, (y2 < prevY2) ? y2 : prevY2, abs(y2 - prevY2) + 1,
-                               kPlotCh2Color);
+        if (sampleHold) {
+            // Sample-and-hold: flat hold then vertical edge (DAC stair look).
+            if (x > prevX) {
+                tft_.drawFastHLine(prevX, prevY1, x - prevX, kPlotCh1Color);
+                tft_.drawFastHLine(prevX, prevY2, x - prevX, kPlotCh2Color);
+            }
+            if (y1 != prevY1) {
+                tft_.drawFastVLine(x, (y1 < prevY1) ? y1 : prevY1, abs(y1 - prevY1) + 1,
+                                   kPlotCh1Color);
+            }
+            if (y2 != prevY2) {
+                tft_.drawFastVLine(x, (y2 < prevY2) ? y2 : prevY2, abs(y2 - prevY2) + 1,
+                                   kPlotCh2Color);
+            }
+        } else {
+            tft_.drawLine(prevX, prevY1, x, y1, kPlotCh1Color);
+            tft_.drawLine(prevX, prevY2, x, y2, kPlotCh2Color);
         }
         prevX = x;
         prevY1 = y1;
@@ -675,9 +686,11 @@ void Display::render(const ParamSnapshot &state, const WavePlotSamples &plot) {
                                 field == FocusField::PulseBack || field == FocusField::DutyBack ||
                                 field == FocusField::PwmBack;
             const bool isCheckbox =
-                    field == FocusField::SigEnabled || field == FocusField::PwmEnabled;
-            const bool checked = field == FocusField::SigEnabled ? state.signalEnabled
-                                                                 : state.pwmEnabled;
+                    field == FocusField::SigEnabled || field == FocusField::PwmEnabled ||
+                    field == FocusField::SigRealForm;
+            const bool checked = field == FocusField::SigEnabled   ? state.signalEnabled
+                                 : field == FocusField::SigRealForm ? state.plotRealWaveform
+                                                                    : state.pwmEnabled;
             drawFieldRow(screen, menuH, visRows, nameBuf, valueBuf, focused, editing, isBack,
                          isCheckbox, isCheckbox && checked);
         }
@@ -687,7 +700,9 @@ void Display::render(const ParamSnapshot &state, const WavePlotSamples &plot) {
         const bool plotNeed = menuChanged || !hasLast_ || !lastShowedPlot_ ||
                               plotParamsChanged(last_, state);
         if (plotNeed && plot.ch1 != nullptr && plot.ch2 != nullptr && plot.count > 0) {
-            drawWavePlot(plot.ch1, plot.ch2, plot.count);
+            const bool sampleHold =
+                    state.menu != MenuLevel::Pwm && state.plotRealWaveform;
+            drawWavePlot(plot.ch1, plot.ch2, plot.count, sampleHold);
         }
     }
 

@@ -497,26 +497,40 @@ void SignalGenerator::fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch
                 std::llround(static_cast<double>(phaseDeg) * (4294967296.0 / 360.0)));
     }
 
-    const uint32_t phaseInc = freqToPhaseInc(params.freqHz);
-    // Real DAC samples in one period at Fs (e.g. 100 kHz / 10 kHz → 10 steps).
-    int nSamples = static_cast<int>(std::lround(static_cast<double>(kSampleRateHz) /
-                                                 static_cast<double>(params.freqHz < 0.1f
-                                                                            ? 0.1f
-                                                                            : params.freqHz)));
-    if (nSamples < 1) {
-        nSamples = 1;
-    }
+    if (params.plotRealWaveform) {
+        const uint32_t phaseInc = freqToPhaseInc(params.freqHz);
+        // Real DAC samples in one period at Fs (e.g. 100 kHz / 10 kHz → 10 steps).
+        float freqHz = params.freqHz;
+        if (freqHz < 0.1f) {
+            freqHz = 0.1f;
+        }
+        int nSamples =
+                static_cast<int>(std::lround(static_cast<double>(kSampleRateHz) / freqHz));
+        if (nSamples < 1) {
+            nSamples = 1;
+        }
 
-    for (int i = 0; i < count; ++i) {
-        // Nearest-neighbor map of N period samples onto plot width → sample-and-hold stairs.
-        const uint32_t si =
-                (count <= 1)
-                        ? 0u
-                        : static_cast<uint32_t>((static_cast<uint64_t>(i) *
-                                                 static_cast<uint32_t>(nSamples)) /
-                                                static_cast<uint32_t>(count));
-        const uint32_t phase = si * phaseInc;
-        renderPair(phase, phaseOffset, lut, gainQ8, analogPwm, sineNeg90, pulseEnd, scaleQ16,
-                   &ch1[i], &ch2[i]);
+        for (int i = 0; i < count; ++i) {
+            // Nearest-neighbor map of N period samples onto plot width → sample-and-hold stairs.
+            const uint32_t si =
+                    (count <= 1)
+                            ? 0u
+                            : static_cast<uint32_t>((static_cast<uint64_t>(i) *
+                                                     static_cast<uint32_t>(nSamples)) /
+                                                    static_cast<uint32_t>(count));
+            const uint32_t phase = si * phaseInc;
+            renderPair(phase, phaseOffset, lut, gainQ8, analogPwm, sineNeg90, pulseEnd, scaleQ16,
+                       &ch1[i], &ch2[i]);
+        }
+    } else {
+        // Ideal: evenly spaced phase over one period (smooth LUT curve).
+        for (int i = 0; i < count; ++i) {
+            const uint32_t phase =
+                    (count == 1) ? 0u
+                                 : static_cast<uint32_t>((static_cast<uint64_t>(i) << 32) /
+                                                        static_cast<uint32_t>(count));
+            renderPair(phase, phaseOffset, lut, gainQ8, analogPwm, sineNeg90, pulseEnd, scaleQ16,
+                       &ch1[i], &ch2[i]);
+        }
     }
 }

@@ -24,7 +24,7 @@ Enforced via [`.cursor/rules/`](.cursor/rules/):
 
 - Board: `esp32dev` (ESP32-WROOM-32) — see [`platformio.ini`](platformio.ini)
 - Pins: [`include/pins.h`](include/pins.h)
-- Display: ST7789 240×320, `setRotation(2)` (180°), Adafruit GFX; Signal/PWM submenus show a bottom-¼ CH1+CH2 one-period overlay (DAC plot uses real Fs/freq sample count → stair-steps at high freq)
+- Display: ST7789 240×320, `setRotation(2)` (180°), Adafruit GFX; Signal/PWM submenus show a bottom-¼ CH1+CH2 one-period overlay (Signal **Real form** checkbox, default ON: Fs/freq stairs; OFF: ideal smooth curve)
 - Outputs: DAC ch1 GPIO25, DAC ch2 GPIO26 (`PIN_DAC_CH1` / `PIN_DAC_CH2`; same waveform / freq / amplitude; ch2 phase offset)
 - DAC Mode: **Oscillator** (continuous Wave LUT; CH2 phase in degrees) or **Analog PWM** (one Wave cycle compressed into pulse width, idle at 0; CH2 phase shift in µs −9999…+9999; Sine uses sin(A−90°) on both channels). Pulse µs ↔ duty % stay linked. Signal menu nests **Frequency** (both modes), **Phase** (Oscillator), **Shift us** / **Pulse us** / **Duty %** (Analog PWM) with summary values on the parent rows.
 - PWM: ch1 GPIO21, ch2 GPIO22 (`PIN_PWM_CH1` / `PIN_PWM_CH2`; shared freq; per-channel pulse width µs). Can run with DAC; each gated by menu Enabled (default OFF).
