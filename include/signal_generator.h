@@ -58,8 +58,8 @@ private:
     static constexpr int kLutIndexShift = 17; // 32 - log2(32768)
     static constexpr int kLutQuarter = kLutSize / 4; // 90° in LUT indices
     static constexpr float kSampleRateHz = 400000.0f;
-    // ALTER mode: 2 bytes per stereo sample → DMA byte rate = 2 * sample rate.
-    static constexpr uint32_t kDmaFreqHz = static_cast<uint32_t>(kSampleRateHz) * 2u;
+    // ESP32 I2S DAC: freq_hz is per-channel sample rate (WS), not 2× stereo byte rate.
+    static constexpr uint32_t kDmaFreqHz = static_cast<uint32_t>(kSampleRateHz);
     static constexpr uint32_t kDmaDescNum = 8;
     static constexpr size_t kDmaBufSize = 512;
     static constexpr float kDacFullScaleV = 3.3f;

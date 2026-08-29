@@ -6,6 +6,7 @@ enum class Waveform : uint8_t {
     Sine = 0,
     Rectangular,
     Triangle,
+    Saw,
     Count,
 };
 
@@ -71,6 +72,10 @@ enum class FocusField : uint8_t {
     PwmBack,
     Count,
 };
+
+// Signal/DAC frequency digits: kHz 0…50; composite max matches other digit ranges.
+constexpr int kMaxFreqKHz = 50;
+constexpr float kMaxFreqHz = 51999.0f; // 50*1000 + 9*100 + 100*10 + 99
 
 struct ParamSnapshot {
     int freqKHz = 0;

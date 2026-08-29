@@ -33,6 +33,8 @@ const char *Display::waveformName(Waveform w) {
             return "Rect";
         case Waveform::Triangle:
             return "Tri";
+        case Waveform::Saw:
+            return "Saw";
         case Waveform::Sine:
         default:
             return "Sine";

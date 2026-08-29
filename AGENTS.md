@@ -26,6 +26,8 @@ Enforced via [`.cursor/rules/`](.cursor/rules/):
 - Pins: [`include/pins.h`](include/pins.h)
 - Display: ST7789 240×320, `setRotation(2)` (180°), Adafruit GFX; Signal/PWM submenus show a bottom-¼ CH1+CH2 one-period overlay (Signal **Real form** checkbox, default ON: Fs/freq stairs; OFF: ideal smooth curve)
 - Outputs: DAC ch1 GPIO25, DAC ch2 GPIO26 (`PIN_DAC_CH1` / `PIN_DAC_CH2`; same waveform / freq / amplitude; ch2 phase offset)
+- Waveforms (shared LUT): **Sine**, **Rect**, **Tri** (rise 0→max then fall to 0), **Saw** (monotonic rise 0→max, wrap drops to 0)
+- Frequency (Signal/DAC): kHz digit 0…50 (`kMaxFreqKHz`); composite 0.1…51999 Hz (`kMaxFreqHz` in [`include/param_model.h`](include/param_model.h))
 - DAC Mode: **Oscillator** (continuous Wave LUT; CH2 phase in degrees) or **Analog PWM** (one Wave cycle compressed into pulse width, idle at 0; CH2 phase shift in µs −9999…+9999; Sine uses sin(A−90°) on both channels). Pulse µs ↔ duty % stay linked. Signal menu nests **Frequency** (both modes), **Phase** (Oscillator), **Shift us** / **Pulse us** / **Duty %** (Analog PWM) with summary values on the parent rows.
 - PWM: ch1 GPIO21, ch2 GPIO22 (`PIN_PWM_CH1` / `PIN_PWM_CH2`; shared freq; per-channel pulse width µs). Can run with DAC; each gated by menu Enabled (default OFF).
 
@@ -50,7 +52,7 @@ pio device monitor     # 115200
 - **Callbacks:** register handlers from owners (e.g. `main.cpp`), not fake class singletons.
 - **Channels:** type, frequency, and amplitude are always equal on both DACs; only phase (CH2 relative to CH1; positive => CH2 leads) differs.
 - **DAC + PWM:** both may run together; each is gated by its menu `Enabled` (default OFF). Digital LEDC PWM is not a DAC waveform mode; Analog PWM is a DAC Mode that gates a Wave impulse by duty/pulse length.
-- **DAC DMA:** output via `dac_continuous` (`DAC_CHANNEL_MODE_ALTER`, 400 kHz/channel); do not use `dacWrite` / oneshot in the hot path.
+- **DAC DMA:** output via `dac_continuous` (`DAC_CHANNEL_MODE_ALTER`, 400 kHz/channel). On ESP32, `freq_hz` is per-channel sample rate (I2S WS); do not set 2× for stereo ALTER. Do not use `dacWrite` / oneshot in the hot path.
 - **Phase resolution:** LUT size 32768 → real CH2−CH1 step ≈ 0.011° (requirement ≤ 0.05°).
 
 ## Key sources
