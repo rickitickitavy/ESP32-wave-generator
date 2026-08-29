@@ -186,8 +186,8 @@ void ParamModel::recompute() {
     float f = static_cast<float>(state_.freqKHz) * 1000.0f +
               static_cast<float>(state_.freqHundredHz) * 100.0f +
               static_cast<float>(state_.freqTensHz) * 10.0f + state_.freqHzPart;
-    // Max: 19*1000 + 9*100 + 100*10 + 99 = 20999
-    state_.freqHz = clampf(f, 0.1f, 20999.0f);
+    // Max: kMaxFreqKHz*1000 + 9*100 + 100*10 + 99
+    state_.freqHz = clampf(f, 0.1f, kMaxFreqHz);
 
     float p = static_cast<float>(state_.phaseTens) * 10.0f + static_cast<float>(state_.phaseDeg) +
               state_.phaseFine;
@@ -410,7 +410,7 @@ void ParamModel::applyEncoderDelta(int steps) {
             break;
         }
         case FocusField::FreqKHz:
-            state_.freqKHz = clampi(state_.freqKHz + steps, 0, 19);
+            state_.freqKHz = clampi(state_.freqKHz + steps, 0, kMaxFreqKHz);
             if (state_.dacMode == DacMode::AnalogPwm) {
                 pulseDutyAnchor_ = PulseDutyAnchor::FreqKeepDuty;
             }

@@ -40,19 +40,31 @@ uint8_t SignalGenerator::sampleAt(Waveform waveform, int index) {
         case Waveform::Rectangular:
             return (index < kLutSize / 2) ? 255 : 0;
         case Waveform::Triangle: {
+            const int halfLut = kLutSize / 2;
             int tri;
-            if (index < kLutSize / 2) {
-                tri = (index * 255 * 2) / (kLutSize / 2);
-                if (tri > 255) {
-                    tri = 255;
-                }
+            if (index <= halfLut) {
+                tri = (index * 255) / halfLut;
             } else {
-                tri = 255 - (((index - kLutSize / 2) * 255 * 2) / (kLutSize / 2));
-                if (tri < 0) {
-                    tri = 0;
-                }
+                tri = ((kLutSize - index) * 255) / halfLut;
+            }
+            if (tri < 0) {
+                tri = 0;
+            }
+            if (tri > 255) {
+                tri = 255;
             }
             return static_cast<uint8_t>(tri);
+        }
+        case Waveform::Saw: {
+            // Rise 0→255 over the period; wrap to index 0 is the falling edge.
+            const int saw = (index * 255) / (kLutSize - 1);
+            if (saw < 0) {
+                return 0;
+            }
+            if (saw > 255) {
+                return 255;
+            }
+            return static_cast<uint8_t>(saw);
         }
         case Waveform::Sine:
         default: {
@@ -86,8 +98,8 @@ uint32_t SignalGenerator::freqToPhaseInc(float freqHz) {
     if (freqHz < 0.1f) {
         freqHz = 0.1f;
     }
-    if (freqHz > 20999.0f) {
-        freqHz = 20999.0f;
+    if (freqHz > kMaxFreqHz) {
+        freqHz = kMaxFreqHz;
     }
     const double inc =
             (static_cast<double>(freqHz) / static_cast<double>(kSampleRateHz)) * 4294967296.0;
@@ -298,9 +310,8 @@ void SignalGenerator::begin() {
     if (err != ESP_OK) {
         Serial.printf("DAC DMA start_async failed: %s\n", esp_err_to_name(err));
     } else {
-        Serial.printf("DAC DMA ready: ALTER %lu Hz byte-rate (%lu Hz/ch)\n",
-                      static_cast<unsigned long>(kDmaFreqHz),
-                      static_cast<unsigned long>(kSampleRateHz));
+        Serial.printf("DAC DMA ready: ALTER %lu Hz/ch\n",
+                      static_cast<unsigned long>(kDmaFreqHz));
     }
 }
 
