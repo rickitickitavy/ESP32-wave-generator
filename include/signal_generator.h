@@ -41,21 +41,24 @@ private:
     void fillLut(Waveform waveform);
     void setAnalogPwmDuty(float dutyPercent);
     static uint8_t sampleAt(Waveform waveform, int index);
-    static uint32_t freqToPhaseInc(float freqHz);
+    static uint32_t samplesPerPeriod(float freqHz);
+    static uint32_t phaseAtPeriodSample(uint32_t sampleIndex, uint32_t periodSamples);
     static uint8_t scaleSample(uint8_t sample, uint16_t gainQ8);
 
-    // Render one stereo sample from DDS state (does not advance phase_).
+    // Render one stereo sample (does not advance sampleInPeriod_).
     static void renderPair(uint32_t phase, uint32_t phaseOffset, const uint8_t *lut,
-                           uint16_t gainQ8, bool analogPwm, bool sineNeg90, uint32_t pulseEnd,
-                           uint32_t scaleQ16, uint8_t *ch1, uint8_t *ch2);
+                           uint16_t gainQ8, bool analogPwm, bool sineNeg90, bool rectHold,
+                           uint32_t pulseEnd, uint8_t *ch1, uint8_t *ch2);
 
     void fillDmaChunk(uint8_t *dst, size_t byteCount);
     void refillTaskLoop();
     static void refillTaskEntry(void *arg);
 
-    // 32768 → phase step 360/32768 ≈ 0.011° (must be ≤ 0.05° real resolution).
-    static constexpr int kLutSize = 32768;
-    static constexpr int kLutIndexShift = 17; // 32 - log2(32768)
+    // 131072 index space → phase step ≈ 0.0027°. RAM table is 65536 bytes (ESP32 DRAM).
+    static constexpr int kLutSize = 131072;
+    static constexpr int kLutIndexShift = 15; // 32 - log2(131072)
+    static constexpr int kLutStorage = 65536;
+    static constexpr int kLutStorageShift = 1; // kLutSize / kLutStorage
     static constexpr int kLutQuarter = kLutSize / 4; // 90° in LUT indices
     static constexpr float kSampleRateHz = 400000.0f;
     // ESP32 I2S DAC: freq_hz is per-channel sample rate (WS), not 2× stereo byte rate.
@@ -66,25 +69,27 @@ private:
     static constexpr uint8_t kMidscale = 128;
 
     static_assert((1 << (32 - kLutIndexShift)) == kLutSize, "LUT size/shift mismatch");
+    static_assert((kLutSize / kLutStorage) == (1 << kLutStorageShift), "LUT storage shift mismatch");
     static_assert(360.0f / static_cast<float>(kLutSize) <= 0.05f, "phase step must be <= 0.05 deg");
 
-    // Single shared wave table; rewritten when waveform changes.
-    uint8_t lut_[kLutSize]{};
+    // Heap 64 KB table; DDS index is kLutSize. DMA refill must not call sin() per sample.
+    uint8_t *lut_ = nullptr;
     Waveform waveform_ = Waveform::Sine;
 
-    volatile uint32_t phase_ = 0;
-    volatile uint32_t phaseInc_ = 0;
+    // Integer samples per period so sample 0 is always LUT index 0 (no walking stairs).
+    volatile uint32_t periodSamples_ = 1;
+    volatile uint32_t sampleInPeriod_ = 0;
     volatile uint32_t phaseOffset_ = 0;
     // Q8 fixed-point gain: 256 == full scale (ampVolts / 3.3)
     volatile uint16_t ampGainQ8_ = 256;
 
     // Analog PWM: compress base LUT into [0, pulseEnd); idle (0) afterward.
-    // scaleQ16 = kLutSize * 65536 / pulseEnd (0 when disabled / zero pulse).
     // analogPwmSineNeg90_: index as sin(A-90°) for both channels.
+    // analogPwmRectHold_: Rect is high for the whole pulse window (duty = high time).
     volatile bool analogPwm_ = false;
     volatile bool analogPwmSineNeg90_ = false;
+    volatile bool analogPwmRectHold_ = false;
     volatile uint32_t analogPwmPulseEnd_ = 0;
-    volatile uint32_t analogPwmScaleQ16_ = 0;
 
     volatile bool paused_ = true;
 

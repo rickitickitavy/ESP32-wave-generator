@@ -53,7 +53,7 @@ pio device monitor     # 115200
 - **Channels:** type, frequency, and amplitude are always equal on both DACs; only phase (CH2 relative to CH1; positive => CH2 leads) differs.
 - **DAC + PWM:** both may run together; each is gated by its menu `Enabled` (default OFF). Digital LEDC PWM is not a DAC waveform mode; Analog PWM is a DAC Mode that gates a Wave impulse by duty/pulse length.
 - **DAC DMA:** output via `dac_continuous` (`DAC_CHANNEL_MODE_ALTER`, 400 kHz/channel). On ESP32, `freq_hz` is per-channel sample rate (I2S WS); do not set 2× for stereo ALTER. Do not use `dacWrite` / oneshot in the hot path.
-- **Phase resolution:** LUT size 32768 → real CH2−CH1 step ≈ 0.011° (requirement ≤ 0.05°).
+- **Phase resolution:** LUT index space 131072 (64 KB RAM table) → real CH2−CH1 step ≈ 0.0027° (requirement ≤ 0.05°).
 
 ## Key sources
 
