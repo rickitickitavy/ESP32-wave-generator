@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstring>
 
+#include "esp_heap_caps.h"
+
 #include "driver/dac_continuous.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
@@ -77,8 +79,11 @@ uint8_t SignalGenerator::sampleAt(Waveform waveform, int index) {
 }
 
 void SignalGenerator::fillLut(Waveform waveform) {
-    for (int i = 0; i < kLutSize; ++i) {
-        lut_[i] = sampleAt(waveform, i);
+    if (lut_ == nullptr) {
+        return;
+    }
+    for (int i = 0; i < kLutStorage; ++i) {
+        lut_[i] = sampleAt(waveform, i << kLutStorageShift);
     }
 }
 
@@ -94,24 +99,30 @@ uint8_t SignalGenerator::scaleSample(uint8_t sample, uint16_t gainQ8) {
     return static_cast<uint8_t>(scaled);
 }
 
-uint32_t SignalGenerator::freqToPhaseInc(float freqHz) {
+uint32_t SignalGenerator::samplesPerPeriod(float freqHz) {
     if (freqHz < 0.1f) {
         freqHz = 0.1f;
     }
     if (freqHz > kMaxFreqHz) {
         freqHz = kMaxFreqHz;
     }
-    const double inc =
-            (static_cast<double>(freqHz) / static_cast<double>(kSampleRateHz)) * 4294967296.0;
-    if (inc < 1.0) {
-        return 1;
+    int n = static_cast<int>(std::lround(static_cast<double>(kSampleRateHz) / freqHz));
+    if (n < 1) {
+        n = 1;
     }
-    return static_cast<uint32_t>(inc);
+    return static_cast<uint32_t>(n);
+}
+
+uint32_t SignalGenerator::phaseAtPeriodSample(uint32_t sampleIndex, uint32_t periodSamples) {
+    if (periodSamples == 0) {
+        return 0;
+    }
+    return static_cast<uint32_t>((static_cast<uint64_t>(sampleIndex) << 32) / periodSamples);
 }
 
 void SignalGenerator::renderPair(uint32_t phase, uint32_t phaseOffset, const uint8_t *lut,
-                                 uint16_t gainQ8, bool analogPwm, bool sineNeg90, uint32_t pulseEnd,
-                                 uint32_t scaleQ16, uint8_t *ch1, uint8_t *ch2) {
+                                 uint16_t gainQ8, bool analogPwm, bool sineNeg90, bool rectHold,
+                                 uint32_t pulseEnd, uint8_t *ch1, uint8_t *ch2) {
     uint32_t idx1 = phase >> kLutIndexShift;
     uint32_t idx2 = (phase + phaseOffset) >> kLutIndexShift;
     uint8_t raw1;
@@ -119,22 +130,27 @@ void SignalGenerator::renderPair(uint32_t phase, uint32_t phaseOffset, const uin
     if (analogPwm) {
         if (pulseEnd == 0 || idx1 >= pulseEnd) {
             raw1 = 0;
+        } else if (rectHold) {
+            raw1 = 255;
         } else {
-            uint32_t src1 = (idx1 * scaleQ16) >> 16;
+            uint32_t src1 = static_cast<uint32_t>(
+                    (static_cast<uint64_t>(idx1) * static_cast<uint32_t>(kLutSize)) / pulseEnd);
             if (src1 >= static_cast<uint32_t>(kLutSize)) {
                 src1 = static_cast<uint32_t>(kLutSize - 1);
             }
-            // sin(A - 90°) ≡ LUT index shifted by -kLutQuarter (both channels).
             if (sineNeg90) {
                 src1 = (src1 + static_cast<uint32_t>(kLutSize - kLutQuarter)) &
                        static_cast<uint32_t>(kLutSize - 1);
             }
-            raw1 = lut[src1];
+            raw1 = lut[src1 >> kLutStorageShift];
         }
         if (pulseEnd == 0 || idx2 >= pulseEnd) {
             raw2 = 0;
+        } else if (rectHold) {
+            raw2 = 255;
         } else {
-            uint32_t src2 = (idx2 * scaleQ16) >> 16;
+            uint32_t src2 = static_cast<uint32_t>(
+                    (static_cast<uint64_t>(idx2) * static_cast<uint32_t>(kLutSize)) / pulseEnd);
             if (src2 >= static_cast<uint32_t>(kLutSize)) {
                 src2 = static_cast<uint32_t>(kLutSize - 1);
             }
@@ -142,11 +158,11 @@ void SignalGenerator::renderPair(uint32_t phase, uint32_t phaseOffset, const uin
                 src2 = (src2 + static_cast<uint32_t>(kLutSize - kLutQuarter)) &
                        static_cast<uint32_t>(kLutSize - 1);
             }
-            raw2 = lut[src2];
+            raw2 = lut[src2 >> kLutStorageShift];
         }
     } else {
-        raw1 = lut[idx1];
-        raw2 = lut[idx2];
+        raw1 = lut[idx1 >> kLutStorageShift];
+        raw2 = lut[idx2 >> kLutStorageShift];
     }
     *ch1 = scaleSample(raw1, gainQ8);
     *ch2 = scaleSample(raw2, gainQ8);
@@ -157,31 +173,42 @@ void SignalGenerator::fillDmaChunk(uint8_t *dst, size_t byteCount) {
         return;
     }
 
-    if (paused_) {
+    if (paused_ || lut_ == nullptr) {
         std::memset(dst, kMidscale, byteCount);
         return;
     }
 
     const uint16_t gain = ampGainQ8_;
     const uint32_t offset = phaseOffset_;
+    const uint8_t *lut = lut_;
     const bool analogPwm = analogPwm_;
     const bool sineNeg90 = analogPwmSineNeg90_;
+    const bool rectHold = analogPwmRectHold_;
     const uint32_t pulseEnd = analogPwmPulseEnd_;
-    const uint32_t scaleQ16 = analogPwmScaleQ16_;
-    const uint32_t phaseInc = phaseInc_;
+    uint32_t periodSamples = periodSamples_;
+    if (periodSamples == 0) {
+        periodSamples = 1;
+    }
+    uint32_t sampleInPeriod = sampleInPeriod_;
+    if (sampleInPeriod >= periodSamples) {
+        sampleInPeriod = 0;
+    }
 
-    uint32_t phase = phase_;
     // ALTER layout: [ch1, ch2, ch1, ch2, ...]
     const size_t pairs = byteCount / 2;
     for (size_t i = 0; i < pairs; ++i) {
         uint8_t ch1;
         uint8_t ch2;
-        renderPair(phase, offset, lut_, gain, analogPwm, sineNeg90, pulseEnd, scaleQ16, &ch1, &ch2);
+        const uint32_t phase = phaseAtPeriodSample(sampleInPeriod, periodSamples);
+        renderPair(phase, offset, lut, gain, analogPwm, sineNeg90, rectHold, pulseEnd, &ch1, &ch2);
         dst[i * 2] = ch1;
         dst[i * 2 + 1] = ch2;
-        phase += phaseInc;
+        sampleInPeriod += 1;
+        if (sampleInPeriod >= periodSamples) {
+            sampleInPeriod = 0;
+        }
     }
-    phase_ = phase;
+    sampleInPeriod_ = sampleInPeriod;
 
     if ((byteCount & 1u) != 0u) {
         dst[byteCount - 1] = kMidscale;
@@ -231,16 +258,23 @@ void SignalGenerator::refillTaskLoop() {
 }
 
 void SignalGenerator::begin() {
+    lut_ = static_cast<uint8_t *>(heap_caps_malloc(static_cast<size_t>(kLutStorage),
+                                                   MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
+    if (lut_ == nullptr) {
+        Serial.println("DAC LUT alloc failed");
+        return;
+    }
+
     waveform_ = Waveform::Sine;
     fillLut(waveform_);
-    phase_ = 0;
-    phaseInc_ = freqToPhaseInc(1.0f);
+    periodSamples_ = samplesPerPeriod(1.0f);
+    sampleInPeriod_ = 0;
     phaseOffset_ = 0;
     ampGainQ8_ = 256;
     analogPwm_ = false;
     analogPwmSineNeg90_ = false;
+    analogPwmRectHold_ = false;
     analogPwmPulseEnd_ = 0;
-    analogPwmScaleQ16_ = 0;
     paused_ = true;
 
     dac_continuous_config_t contCfg = {
@@ -324,7 +358,11 @@ void SignalGenerator::resume() {
 }
 
 void SignalGenerator::setFrequency(float freqHz) {
-    phaseInc_ = freqToPhaseInc(freqHz);
+    const uint32_t n = samplesPerPeriod(freqHz);
+    if (n != periodSamples_) {
+        periodSamples_ = n;
+        sampleInPeriod_ = 0;
+    }
 }
 
 void SignalGenerator::setPhaseDeg(float phaseDeg) {
@@ -358,10 +396,9 @@ void SignalGenerator::setPhaseUs(int phaseUs, float freqHz) {
 }
 
 void SignalGenerator::setWaveform(Waveform waveform) {
-    if (waveform == waveform_) {
+    if (waveform == waveform_ && lut_ != nullptr) {
         return;
     }
-    // Caller pauses DMA mute around apply, so refill will not read lut_ mid-rewrite.
     fillLut(waveform);
     waveform_ = waveform;
 }
@@ -383,12 +420,6 @@ void SignalGenerator::setAnalogPwmDuty(float dutyPercent) {
     }
 
     analogPwmPulseEnd_ = static_cast<uint32_t>(n);
-    if (n <= 0) {
-        analogPwmScaleQ16_ = 0;
-    } else {
-        analogPwmScaleQ16_ =
-                static_cast<uint32_t>((static_cast<uint64_t>(kLutSize) << 16) / static_cast<uint32_t>(n));
-    }
     analogPwm_ = true;
 }
 
@@ -422,12 +453,13 @@ void SignalGenerator::apply(const ParamSnapshot &params) {
         setPhaseUs(params.phaseShiftUs, params.freqHz);
         setAnalogPwmDuty(params.dutyPercent);
         analogPwmSineNeg90_ = (params.waveform == Waveform::Sine);
+        analogPwmRectHold_ = (params.waveform == Waveform::Rectangular);
     } else {
         setPhaseDeg(params.phaseDegTotal);
         analogPwm_ = false;
         analogPwmSineNeg90_ = false;
+        analogPwmRectHold_ = false;
         analogPwmPulseEnd_ = 0;
-        analogPwmScaleQ16_ = 0;
     }
 }
 
@@ -436,8 +468,12 @@ void SignalGenerator::fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch
     if (ch1 == nullptr || ch2 == nullptr || count <= 0) {
         return;
     }
+    if (lut_ == nullptr) {
+        std::memset(ch1, kMidscale, static_cast<size_t>(count));
+        std::memset(ch2, kMidscale, static_cast<size_t>(count));
+        return;
+    }
 
-    // Uses lut_ filled by setWaveform/apply (called before preview in applyAndPaint).
     const uint8_t *lut = lut_;
 
     float volts = params.ampVolts;
@@ -455,12 +491,13 @@ void SignalGenerator::fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch
     uint32_t phaseOffset = 0;
     bool analogPwm = false;
     bool sineNeg90 = false;
+    bool rectHold = false;
     uint32_t pulseEnd = 0;
-    uint32_t scaleQ16 = 0;
 
     if (params.dacMode == DacMode::AnalogPwm) {
         analogPwm = true;
         sineNeg90 = (params.waveform == Waveform::Sine);
+        rectHold = (params.waveform == Waveform::Rectangular);
 
         int phaseUs = params.phaseShiftUs;
         if (phaseUs < -9999) {
@@ -492,10 +529,6 @@ void SignalGenerator::fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch
             n = kLutSize;
         }
         pulseEnd = static_cast<uint32_t>(n);
-        if (n > 0) {
-            scaleQ16 = static_cast<uint32_t>((static_cast<uint64_t>(kLutSize) << 16) /
-                                             static_cast<uint32_t>(n));
-        }
     } else {
         float phaseDeg = params.phaseDegTotal;
         if (phaseDeg < -360.0f) {
@@ -509,28 +542,17 @@ void SignalGenerator::fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch
     }
 
     if (params.plotRealWaveform) {
-        const uint32_t phaseInc = freqToPhaseInc(params.freqHz);
-        // Real DAC samples in one period at Fs (e.g. 400 kHz / 10 kHz → 40 steps).
-        float freqHz = params.freqHz;
-        if (freqHz < 0.1f) {
-            freqHz = 0.1f;
-        }
-        int nSamples =
-                static_cast<int>(std::lround(static_cast<double>(kSampleRateHz) / freqHz));
-        if (nSamples < 1) {
-            nSamples = 1;
-        }
+        const uint32_t nSamples = samplesPerPeriod(params.freqHz);
 
         for (int i = 0; i < count; ++i) {
             // Nearest-neighbor map of N period samples onto plot width → sample-and-hold stairs.
             const uint32_t si =
                     (count <= 1)
                             ? 0u
-                            : static_cast<uint32_t>((static_cast<uint64_t>(i) *
-                                                     static_cast<uint32_t>(nSamples)) /
+                            : static_cast<uint32_t>((static_cast<uint64_t>(i) * nSamples) /
                                                     static_cast<uint32_t>(count));
-            const uint32_t phase = si * phaseInc;
-            renderPair(phase, phaseOffset, lut, gainQ8, analogPwm, sineNeg90, pulseEnd, scaleQ16,
+            const uint32_t phase = phaseAtPeriodSample(si, nSamples);
+            renderPair(phase, phaseOffset, lut, gainQ8, analogPwm, sineNeg90, rectHold, pulseEnd,
                        &ch1[i], &ch2[i]);
         }
     } else {
@@ -540,7 +562,7 @@ void SignalGenerator::fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch
                     (count == 1) ? 0u
                                  : static_cast<uint32_t>((static_cast<uint64_t>(i) << 32) /
                                                         static_cast<uint32_t>(count));
-            renderPair(phase, phaseOffset, lut, gainQ8, analogPwm, sineNeg90, pulseEnd, scaleQ16,
+            renderPair(phase, phaseOffset, lut, gainQ8, analogPwm, sineNeg90, rectHold, pulseEnd,
                        &ch1[i], &ch2[i]);
         }
     }
