@@ -53,7 +53,7 @@ private:
     void fillDmaChunk(uint8_t *dst, size_t byteCount);
     void refillTaskLoop();
     static void refillTaskEntry(void *arg);
-
+xs
     // 131072 index space → phase step ≈ 0.0027°. RAM table is 65536 bytes (ESP32 DRAM).
     static constexpr int kLutSize = 131072;
     static constexpr int kLutIndexShift = 15; // 32 - log2(131072)

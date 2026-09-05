@@ -92,8 +92,8 @@ namespace {
     };
 
     constexpr FocusField kSigShiftUsFields[] = {
-            FocusField::ShiftUsBack, FocusField::PhaseUs1000, FocusField::PhaseUs100,
-            FocusField::PhaseUs10,   FocusField::PhaseUs1,
+            FocusField::ShiftUsBack, FocusField::PhaseUs10ms, FocusField::PhaseUs1000,
+            FocusField::PhaseUs100,  FocusField::PhaseUs10,  FocusField::PhaseUs1,
     };
 
     constexpr FocusField kSigPulseFields[] = {
@@ -193,13 +193,15 @@ void ParamModel::recompute() {
               state_.phaseFine;
     state_.phaseDegTotal = clampf(p, -360.0f, 360.0f);
 
+    state_.phaseUs10ms = clampi(state_.phaseUs10ms, -kMaxPhaseUs10ms, kMaxPhaseUs10ms);
     state_.phaseUs1000 = clampi(state_.phaseUs1000, -9, 9);
     state_.phaseUs100 = clampi(state_.phaseUs100, -9, 9);
     state_.phaseUs10 = clampi(state_.phaseUs10, -9, 9);
     state_.phaseUs1 = clampi(state_.phaseUs1, -9, 9);
-    state_.phaseShiftUs = clampi(state_.phaseUs1000 * 1000 + state_.phaseUs100 * 100 +
-                                         state_.phaseUs10 * 10 + state_.phaseUs1,
-                                 -9999, 9999);
+    state_.phaseShiftUs = clampi(state_.phaseUs10ms * 10000 + state_.phaseUs1000 * 1000 +
+                                         state_.phaseUs100 * 100 + state_.phaseUs10 * 10 +
+                                         state_.phaseUs1,
+                                 -kMaxPhaseShiftUs, kMaxPhaseShiftUs);
 
     state_.ampVolts = clampf(state_.ampVolts, 0.0f, 3.3f);
 
@@ -273,7 +275,7 @@ void ParamModel::toggleEdit() {
             return;
         case FocusField::GroupShiftUs:
             state_.menu = MenuLevel::SigShiftUs;
-            state_.focus = FocusField::PhaseUs1000;
+            state_.focus = FocusField::PhaseUs10ms;
             state_.editing = false;
             return;
         case FocusField::GroupPulse:
@@ -448,6 +450,9 @@ void ParamModel::applyEncoderDelta(int steps) {
             state_.phaseFine = clampf(v, -1.0f, 1.0f);
             break;
         }
+        case FocusField::PhaseUs10ms:
+            state_.phaseUs10ms = clampi(state_.phaseUs10ms + steps, -kMaxPhaseUs10ms, kMaxPhaseUs10ms);
+            break;
         case FocusField::PhaseUs1000:
             state_.phaseUs1000 = clampi(state_.phaseUs1000 + steps, -9, 9);
             break;

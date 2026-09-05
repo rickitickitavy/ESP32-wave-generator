@@ -145,6 +145,9 @@ void Display::formatFieldName(FocusField field, char *buf, size_t buflen) {
         case FocusField::PhaseFine:
             snprintf(buf, buflen, "Ph .1");
             break;
+        case FocusField::PhaseUs10ms:
+            snprintf(buf, buflen, "Shift 10ms");
+            break;
         case FocusField::PhaseUs1000:
             snprintf(buf, buflen, "Ph 1ms");
             break;
@@ -262,6 +265,9 @@ void Display::formatFieldValue(const ParamSnapshot &s, FocusField field, char *b
         case FocusField::PhaseFine:
             snprintf(buf, buflen, "%+.1f", static_cast<double>(s.phaseFine));
             break;
+        case FocusField::PhaseUs10ms:
+            snprintf(buf, buflen, "%+d", s.phaseUs10ms);
+            break;
         case FocusField::PhaseUs1000:
             snprintf(buf, buflen, "%+d", s.phaseUs1000);
             break;
@@ -361,6 +367,8 @@ bool Display::fieldChanged(const ParamSnapshot &a, const ParamSnapshot &b, Focus
             return a.phaseDeg != b.phaseDeg;
         case FocusField::PhaseFine:
             return a.phaseFine != b.phaseFine;
+        case FocusField::PhaseUs10ms:
+            return a.phaseUs10ms != b.phaseUs10ms;
         case FocusField::PhaseUs1000:
             return a.phaseUs1000 != b.phaseUs1000;
         case FocusField::PhaseUs100:

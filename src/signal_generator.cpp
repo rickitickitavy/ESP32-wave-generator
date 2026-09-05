@@ -380,11 +380,11 @@ void SignalGenerator::setPhaseDeg(float phaseDeg) {
 
 void SignalGenerator::setPhaseUs(int phaseUs, float freqHz) {
     // Phase of CH2 relative to CH1, microseconds. Positive => CH2 leads CH1.
-    if (phaseUs < -9999) {
-        phaseUs = -9999;
+    if (phaseUs < -kMaxPhaseShiftUs) {
+        phaseUs = -kMaxPhaseShiftUs;
     }
-    if (phaseUs > 9999) {
-        phaseUs = 9999;
+    if (phaseUs > kMaxPhaseShiftUs) {
+        phaseUs = kMaxPhaseShiftUs;
     }
     if (freqHz < 0.1f) {
         freqHz = 0.1f;
@@ -500,11 +500,11 @@ void SignalGenerator::fillPeriodPreview(const ParamSnapshot &params, uint8_t *ch
         rectHold = (params.waveform == Waveform::Rectangular);
 
         int phaseUs = params.phaseShiftUs;
-        if (phaseUs < -9999) {
-            phaseUs = -9999;
+        if (phaseUs < -kMaxPhaseShiftUs) {
+            phaseUs = -kMaxPhaseShiftUs;
         }
-        if (phaseUs > 9999) {
-            phaseUs = 9999;
+        if (phaseUs > kMaxPhaseShiftUs) {
+            phaseUs = kMaxPhaseShiftUs;
         }
         float freqHz = params.freqHz;
         if (freqHz < 0.1f) {

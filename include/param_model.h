@@ -48,6 +48,7 @@ enum class FocusField : uint8_t {
     PhaseFine,
     GroupShiftUs,
     ShiftUsBack,
+    PhaseUs10ms,
     PhaseUs1000,
     PhaseUs100,
     PhaseUs10,
@@ -76,6 +77,8 @@ enum class FocusField : uint8_t {
 // Signal/DAC frequency digits: kHz 0…50; composite max matches other digit ranges.
 constexpr int kMaxFreqKHz = 50;
 constexpr float kMaxFreqHz = 51999.0f; // 50*1000 + 9*100 + 100*10 + 99
+constexpr int kMaxPhaseUs10ms = 100;
+constexpr int kMaxPhaseShiftUs = 1009999; // 100*10000 + 9*1000 + 9*100 + 9*10 + 9
 
 struct ParamSnapshot {
     int freqKHz = 0;
@@ -85,6 +88,7 @@ struct ParamSnapshot {
     int phaseTens = 0;
     int phaseDeg = 0;
     float phaseFine = 0.0f;
+    int phaseUs10ms = 0;
     int phaseUs1000 = 0;
     int phaseUs100 = 0;
     int phaseUs10 = 0;
